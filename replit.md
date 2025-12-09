@@ -1,0 +1,74 @@
+# Snapmaker Control
+
+## Overview
+
+A web-based dashboard application for monitoring and controlling Snapmaker 2.0 F350 3D printers. The application provides real-time printer status monitoring, temperature tracking, jog controls, file management, and webcam feed viewing. Built as a full-stack TypeScript application with React frontend and Express backend.
+
+## User Preferences
+
+Preferred communication style: Simple, everyday language.
+
+## System Architecture
+
+### Frontend Architecture
+- **Framework**: React 18 with TypeScript
+- **Routing**: Wouter (lightweight client-side routing)
+- **State Management**: TanStack React Query for server state management with automatic refetching
+- **UI Components**: shadcn/ui component library built on Radix UI primitives
+- **Styling**: Tailwind CSS v4 with custom industrial dark theme
+- **Build Tool**: Vite for development and production builds
+
+### Backend Architecture
+- **Runtime**: Node.js with Express
+- **Language**: TypeScript with ESM modules
+- **API Design**: RESTful JSON API endpoints under `/api` prefix
+- **Development**: Hot module replacement via Vite middleware integration
+
+### Data Storage
+- **Database**: PostgreSQL with Drizzle ORM
+- **Schema Location**: `shared/schema.ts` contains table definitions for printers and print jobs
+- **Migrations**: Drizzle Kit for schema migrations (`drizzle-kit push`)
+
+### Key Design Patterns
+- **Shared Types**: Schema definitions in `shared/` directory are shared between frontend and backend
+- **Storage Abstraction**: `IStorage` interface in `server/storage.ts` abstracts database operations
+- **Path Aliases**: `@/` maps to client source, `@shared/` maps to shared code
+
+### Project Structure
+```
+client/           # React frontend application
+  src/
+    components/   # UI components (Dashboard widgets, shadcn/ui)
+    pages/        # Route page components
+    hooks/        # Custom React hooks
+    lib/          # Utilities and query client
+server/           # Express backend
+  index.ts        # Server entry point
+  routes.ts       # API route definitions
+  storage.ts      # Database access layer
+  db.ts           # Database connection
+shared/           # Shared code between frontend/backend
+  schema.ts       # Drizzle schema definitions
+```
+
+## External Dependencies
+
+### Database
+- **PostgreSQL**: Primary data store, connection via `DATABASE_URL` environment variable
+- **Drizzle ORM**: Type-safe database queries and schema management
+
+### Snapmaker Printer Integration
+- Direct HTTP communication with Snapmaker printers on port 8080
+- Endpoints for status polling, connection management, and control commands
+- Token-based authentication for printer connections
+
+### UI Libraries
+- **Radix UI**: Headless component primitives for accessibility
+- **Recharts**: Temperature history charting
+- **Lucide React**: Icon library
+- **Embla Carousel**: Carousel component support
+
+### Build & Development
+- **Vite**: Frontend bundler with HMR
+- **esbuild**: Server bundling for production
+- **tsx**: TypeScript execution for development
