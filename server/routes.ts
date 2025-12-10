@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import multer from "multer";
 import { storage } from "./storage";
 import { startWatcher, stopWatcher, getWatcherStatus, initializeWatcher } from "./fileWatcher";
+import { startLubanProxy, stopLubanProxy, getLubanProxyStatus, initializeLubanProxy } from "./lubanProxy";
 import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } from "@shared/schema";
 import { z } from "zod";
 
@@ -798,6 +799,7 @@ export async function registerRoutes(
       
       const watchFolderPath = await storage.getSetting("watchFolderPath");
       const watcherStatus = getWatcherStatus();
+      const lubanProxyStatus = getLubanProxyStatus();
 
       res.json({
         watchFolder: {
@@ -809,15 +811,69 @@ export async function registerRoutes(
           directUrl: `${baseUrl}/api/upload`,
           configUrl: `${baseUrl}/api/slicer-config`,
         },
+        lubanProxy: lubanProxyStatus,
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to get settings" });
     }
   });
 
-  // Initialize file watcher on startup
+  // Luban Proxy settings
+  app.get("/api/settings/luban-proxy", async (req, res) => {
+    try {
+      const status = getLubanProxyStatus();
+      const savedPrinterIp = await storage.getSetting("luban_proxy_printer_ip");
+      res.json({
+        ...status,
+        savedPrinterIp,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get Luban proxy settings" });
+    }
+  });
+
+  app.put("/api/settings/luban-proxy", async (req, res) => {
+    try {
+      const { printerIp, enabled } = req.body;
+
+      if (enabled === false) {
+        await storage.setSetting("luban_proxy_printer_ip", null);
+        await stopLubanProxy();
+        return res.json({ success: true, message: "Luban proxy disabled" });
+      }
+
+      if (!printerIp) {
+        return res.status(400).json({ error: "Printer IP is required" });
+      }
+
+      const success = await startLubanProxy(printerIp);
+      if (!success) {
+        return res.status(400).json({ 
+          error: "Failed to start proxy. Port 8080 may be in use or the printer IP is invalid." 
+        });
+      }
+
+      await storage.setSetting("luban_proxy_printer_ip", printerIp);
+      res.json({ 
+        success: true, 
+        message: "Luban proxy started", 
+        port: 8080,
+        printerIp 
+      });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to configure Luban proxy",
+      });
+    }
+  });
+
+  // Initialize file watcher and Luban proxy on startup
   initializeWatcher().catch((err) => {
     console.error("Failed to initialize file watcher:", err);
+  });
+
+  initializeLubanProxy().catch((err) => {
+    console.error("Failed to initialize Luban proxy:", err);
   });
 
   return httpServer;

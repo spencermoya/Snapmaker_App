@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Plus, Trash2, Wifi, WifiOff, ArrowLeft, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink } from "lucide-react";
+import { Plus, Trash2, Wifi, WifiOff, ArrowLeft, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio } from "lucide-react";
 import { useLocation } from "wouter";
 import type { Printer } from "@shared/schema";
 
@@ -20,6 +20,11 @@ interface SettingsData {
     directUrl: string;
     configUrl: string;
   };
+  lubanProxy: {
+    enabled: boolean;
+    port: number;
+    targetPrinterIp: string | null;
+  };
 }
 
 export default function Settings() {
@@ -27,6 +32,7 @@ export default function Settings() {
   const [newPrinterName, setNewPrinterName] = useState("");
   const [newPrinterIp, setNewPrinterIp] = useState("");
   const [watchFolderPath, setWatchFolderPath] = useState("");
+  const [lubanProxyIp, setLubanProxyIp] = useState("");
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
@@ -131,6 +137,29 @@ export default function Settings() {
     },
   });
 
+  const lubanProxyMutation = useMutation({
+    mutationFn: async (data: { printerIp?: string; enabled: boolean }) => {
+      const res = await fetch("/api/settings/luban-proxy", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to update Luban proxy");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast.success(data.message);
+      setLubanProxyIp("");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
   const handleAddPrinter = () => {
     if (!newPrinterName.trim() || !newPrinterIp.trim()) {
       toast.error("Please fill in all fields");
@@ -152,6 +181,19 @@ export default function Settings() {
 
   const handleDisableWatchFolder = () => {
     watchFolderMutation.mutate(null);
+  };
+
+  const handleEnableLubanProxy = () => {
+    const ip = lubanProxyIp.trim() || (printers.length > 0 ? printers[0].ipAddress : "");
+    if (!ip) {
+      toast.error("Please enter the printer IP address");
+      return;
+    }
+    lubanProxyMutation.mutate({ printerIp: ip, enabled: true });
+  };
+
+  const handleDisableLubanProxy = () => {
+    lubanProxyMutation.mutate({ enabled: false });
   };
 
   const copyToClipboard = async (text: string, field: string) => {
@@ -437,6 +479,82 @@ export default function Settings() {
                   <li><strong>PrusaSlicer:</strong> Printer Settings - Physical Printer - Host Type: OctoPrint</li>
                   <li><strong>Other slicers:</strong> Use OctoPrint upload if available, or POST to the direct URL</li>
                 </ul>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-6 bg-secondary/20 border-border">
+          <div className="flex items-center gap-2 mb-4">
+            <Radio className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold">Luban Auto-Capture</h2>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            Automatically capture files sent from the Luban app. When enabled, point Luban to this 
+            Pi's IP address instead of the printer's IP. Files will be captured and added to your 
+            list, then forwarded to the printer.
+          </p>
+          
+          {settings?.lubanProxy.enabled ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+                <CheckCircle className="h-5 w-5 text-green-500" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Proxy Active</p>
+                  <p className="text-xs text-muted-foreground">
+                    Listening on port {settings.lubanProxy.port}, forwarding to {settings.lubanProxy.targetPrinterIp}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDisableLubanProxy}
+                  disabled={lubanProxyMutation.isPending}
+                  data-testid="button-disable-luban-proxy"
+                >
+                  Disable
+                </Button>
+              </div>
+              
+              <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                <h3 className="font-medium text-sm mb-2 text-blue-400">How to Use</h3>
+                <p className="text-xs text-muted-foreground">
+                  In Luban, instead of connecting to <code className="bg-muted px-1 rounded">{settings.lubanProxy.targetPrinterIp}</code>, 
+                  connect to this Raspberry Pi's IP address on the same port. Files sent through 
+                  Luban will be captured and appear in your file list automatically.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid gap-2">
+                <Label htmlFor="luban-proxy-ip">Printer IP to Forward To</Label>
+                <Input
+                  id="luban-proxy-ip"
+                  placeholder={printers.length > 0 ? printers[0].ipAddress : "e.g., 192.168.1.42"}
+                  value={lubanProxyIp}
+                  onChange={(e) => setLubanProxyIp(e.target.value)}
+                  data-testid="input-luban-proxy-ip"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Your Snapmaker printer's actual IP address. Leave blank to use the first configured printer.
+                </p>
+              </div>
+              <Button
+                onClick={handleEnableLubanProxy}
+                disabled={lubanProxyMutation.isPending}
+                data-testid="button-enable-luban-proxy"
+              >
+                <Monitor className="h-4 w-4 mr-2" />
+                Enable Luban Capture
+              </Button>
+              
+              <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                <h3 className="font-medium text-sm mb-2 text-yellow-400">Note</h3>
+                <p className="text-xs text-muted-foreground">
+                  This feature only works when running on a Raspberry Pi or computer on the same network as your printer. 
+                  It won't work from cloud-hosted environments.
+                </p>
               </div>
             </div>
           )}
