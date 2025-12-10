@@ -1,4 +1,4 @@
-import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, printers, printJobs, dashboardPreferences, uploadedFiles, DEFAULT_ENABLED_MODULES } from "@shared/schema";
+import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, printers, printJobs, dashboardPreferences, uploadedFiles, appSettings, DEFAULT_ENABLED_MODULES } from "@shared/schema";
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 
@@ -15,6 +15,8 @@ export interface IStorage {
   getUploadedFile(id: number, printerId: number): Promise<UploadedFile | undefined>;
   addUploadedFile(file: InsertUploadedFile): Promise<UploadedFile>;
   deleteUploadedFile(id: number, printerId: number): Promise<boolean>;
+  getSetting(key: string): Promise<string | null>;
+  setSetting(key: string, value: string | null): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -107,6 +109,32 @@ export class DbStorage implements IStorage {
       .where(and(eq(uploadedFiles.id, id), eq(uploadedFiles.printerId, printerId)))
       .returning();
     return result.length > 0;
+  }
+
+  async getSetting(key: string): Promise<string | null> {
+    const result = await db
+      .select()
+      .from(appSettings)
+      .where(eq(appSettings.key, key))
+      .limit(1);
+    return result[0]?.value ?? null;
+  }
+
+  async setSetting(key: string, value: string | null): Promise<void> {
+    const existing = await db
+      .select()
+      .from(appSettings)
+      .where(eq(appSettings.key, key))
+      .limit(1);
+
+    if (existing[0]) {
+      await db
+        .update(appSettings)
+        .set({ value })
+        .where(eq(appSettings.key, key));
+    } else {
+      await db.insert(appSettings).values({ key, value });
+    }
   }
 }
 

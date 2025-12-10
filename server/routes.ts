@@ -1,8 +1,24 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import multer from "multer";
 import { storage } from "./storage";
+import { startWatcher, stopWatcher, getWatcherStatus, initializeWatcher } from "./fileWatcher";
 import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } from "@shared/schema";
 import { z } from "zod";
+
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedExtensions = [".gcode", ".nc", ".cnc"];
+    const ext = file.originalname.toLowerCase().slice(file.originalname.lastIndexOf("."));
+    if (allowedExtensions.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only G-code files (.gcode, .nc, .cnc) are allowed"));
+    }
+  },
+});
 
 const SNAPMAKER_PORT = 8080;
 
@@ -613,6 +629,195 @@ export async function registerRoutes(
         error: error instanceof Error ? error.message : "Failed to remove file",
       });
     }
+  });
+
+  // Slicer-compatible upload endpoint (OctoPrint-style)
+  // POST /api/files/local - accepts multipart/form-data with "file" field
+  // Compatible with Cura, PrusaSlicer, and other slicers
+  app.post("/api/files/local", upload.single("file"), async (req, res) => {
+    try {
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      // Get the first connected printer, or first printer if none connected
+      const printers = await storage.getAllPrinters();
+      const printer = printers.find((p) => p.isConnected) || printers[0];
+      
+      if (!printer) {
+        return res.status(400).json({ error: "No printer configured. Please add a printer first." });
+      }
+
+      const fileContent = file.buffer.toString("utf-8");
+      const displayName = file.originalname.replace(/\.[^/.]+$/, "");
+
+      const uploadedFile = await storage.addUploadedFile({
+        printerId: printer.id,
+        filename: file.originalname,
+        displayName,
+        fileContent,
+        source: "slicer",
+      });
+
+      // Return OctoPrint-compatible response
+      res.status(201).json({
+        files: {
+          local: {
+            name: uploadedFile.filename,
+            display: uploadedFile.displayName,
+            path: uploadedFile.filename,
+            origin: "local",
+          },
+        },
+        done: true,
+      });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to upload file",
+      });
+    }
+  });
+
+  // Alternative endpoint: /api/upload for direct slicer integration
+  app.post("/api/upload", upload.single("file"), async (req, res) => {
+    try {
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      // Allow specifying printer by ID in form data or query param
+      const printerIdParam = (req.body.printerId || req.query.printerId) as string | undefined;
+      let printer;
+
+      if (printerIdParam) {
+        printer = await storage.getPrinter(parseInt(printerIdParam));
+      } else {
+        const printers = await storage.getAllPrinters();
+        printer = printers.find((p) => p.isConnected) || printers[0];
+      }
+      
+      if (!printer) {
+        return res.status(400).json({ error: "No printer configured or found" });
+      }
+
+      const fileContent = file.buffer.toString("utf-8");
+      const displayName = (req.body.displayName as string) || file.originalname.replace(/\.[^/.]+$/, "");
+
+      const uploadedFile = await storage.addUploadedFile({
+        printerId: printer.id,
+        filename: file.originalname,
+        displayName,
+        fileContent,
+        source: "slicer",
+      });
+
+      res.status(201).json({
+        success: true,
+        file: {
+          id: uploadedFile.id,
+          filename: uploadedFile.filename,
+          displayName: uploadedFile.displayName,
+        },
+        message: "File uploaded successfully",
+      });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to upload file",
+      });
+    }
+  });
+
+  // Endpoint to get slicer configuration info
+  app.get("/api/slicer-config", async (req, res) => {
+    const protocol = req.protocol;
+    const host = req.get("host");
+    const baseUrl = `${protocol}://${host}`;
+
+    res.json({
+      name: "Snapmaker Control",
+      version: "1.0.0",
+      endpoints: {
+        octoprint: `${baseUrl}/api/files/local`,
+        direct: `${baseUrl}/api/upload`,
+      },
+      instructions: {
+        cura: `In Cura, install the OctoPrint Connection plugin. Set the URL to: ${baseUrl}`,
+        prusaslicer: `In PrusaSlicer, go to Printer Settings > Physical Printer. Set Host Type to "OctoPrint", and URL to: ${baseUrl}`,
+        generic: `POST multipart/form-data to ${baseUrl}/api/upload with a 'file' field containing your G-code`,
+      },
+    });
+  });
+
+  // Watch folder settings
+  app.get("/api/settings/watch-folder", async (req, res) => {
+    try {
+      const savedPath = await storage.getSetting("watchFolderPath");
+      const status = getWatcherStatus();
+      res.json({
+        path: savedPath,
+        active: status.active,
+        currentPath: status.path,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get watch folder settings" });
+    }
+  });
+
+  app.put("/api/settings/watch-folder", async (req, res) => {
+    try {
+      const { path: folderPath } = req.body;
+
+      if (!folderPath) {
+        await storage.setSetting("watchFolderPath", null);
+        await stopWatcher();
+        return res.json({ success: true, message: "Watch folder disabled" });
+      }
+
+      const success = await startWatcher(folderPath);
+      if (!success) {
+        return res.status(400).json({ error: "Invalid folder path or unable to watch" });
+      }
+
+      await storage.setSetting("watchFolderPath", folderPath);
+      res.json({ success: true, message: "Watch folder configured", path: folderPath });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to configure watch folder",
+      });
+    }
+  });
+
+  // Get all settings for the settings page
+  app.get("/api/settings", async (req, res) => {
+    try {
+      const protocol = req.protocol;
+      const host = req.get("host");
+      const baseUrl = `${protocol}://${host}`;
+      
+      const watchFolderPath = await storage.getSetting("watchFolderPath");
+      const watcherStatus = getWatcherStatus();
+
+      res.json({
+        watchFolder: {
+          path: watchFolderPath,
+          active: watcherStatus.active,
+        },
+        slicerApi: {
+          octoprintUrl: `${baseUrl}/api/files/local`,
+          directUrl: `${baseUrl}/api/upload`,
+          configUrl: `${baseUrl}/api/slicer-config`,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+
+  // Initialize file watcher on startup
+  initializeWatcher().catch((err) => {
+    console.error("Failed to initialize file watcher:", err);
   });
 
   return httpServer;

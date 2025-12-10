@@ -37,6 +37,12 @@ export const uploadedFiles = pgTable("uploaded_files", {
   source: text("source").notNull(),
 });
 
+export const appSettings = pgTable("app_settings", {
+  id: serial("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  value: text("value"),
+});
+
 export const insertPrinterSchema = createInsertSchema(printers).omit({
   id: true,
   lastSeen: true,
@@ -74,6 +80,7 @@ export type InsertPrintJob = z.infer<typeof insertPrintJobSchema>;
 export type DashboardPreferences = typeof dashboardPreferences.$inferSelect;
 export type UploadedFile = typeof uploadedFiles.$inferSelect;
 export type InsertUploadedFile = z.infer<typeof insertUploadedFileSchema>;
+export type AppSetting = typeof appSettings.$inferSelect;
 
 export type PrinterStatus = {
   state: string;

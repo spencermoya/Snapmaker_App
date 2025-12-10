@@ -6,18 +6,36 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Plus, Trash2, Wifi, WifiOff, ArrowLeft } from "lucide-react";
+import { Plus, Trash2, Wifi, WifiOff, ArrowLeft, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink } from "lucide-react";
 import { useLocation } from "wouter";
 import type { Printer } from "@shared/schema";
+
+interface SettingsData {
+  watchFolder: {
+    path: string | null;
+    active: boolean;
+  };
+  slicerApi: {
+    octoprintUrl: string;
+    directUrl: string;
+    configUrl: string;
+  };
+}
 
 export default function Settings() {
   const [, setLocation] = useLocation();
   const [newPrinterName, setNewPrinterName] = useState("");
   const [newPrinterIp, setNewPrinterIp] = useState("");
+  const [watchFolderPath, setWatchFolderPath] = useState("");
+  const [copiedField, setCopiedField] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: printers = [], isLoading } = useQuery<Printer[]>({
     queryKey: ["/api/printers"],
+  });
+
+  const { data: settings } = useQuery<SettingsData>({
+    queryKey: ["/api/settings"],
   });
 
   const addPrinterMutation = useMutation({
@@ -90,6 +108,29 @@ export default function Settings() {
     },
   });
 
+  const watchFolderMutation = useMutation({
+    mutationFn: async (path: string | null) => {
+      const res = await fetch("/api/settings/watch-folder", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to update watch folder");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast.success(data.message);
+      setWatchFolderPath("");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
   const handleAddPrinter = () => {
     if (!newPrinterName.trim() || !newPrinterIp.trim()) {
       toast.error("Please fill in all fields");
@@ -99,6 +140,29 @@ export default function Settings() {
       name: newPrinterName,
       ipAddress: newPrinterIp,
     });
+  };
+
+  const handleSetWatchFolder = () => {
+    if (!watchFolderPath.trim()) {
+      toast.error("Please enter a folder path");
+      return;
+    }
+    watchFolderMutation.mutate(watchFolderPath.trim());
+  };
+
+  const handleDisableWatchFolder = () => {
+    watchFolderMutation.mutate(null);
+  };
+
+  const copyToClipboard = async (text: string, field: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(field);
+      toast.success("Copied to clipboard");
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch {
+      toast.error("Failed to copy");
+    }
   };
 
   return (
@@ -114,9 +178,9 @@ export default function Settings() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Printer Settings</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
             <p className="text-muted-foreground mt-1">
-              Manage your Snapmaker printer connections
+              Configure printers, file upload options, and slicer integration
             </p>
           </div>
         </header>
@@ -144,7 +208,7 @@ export default function Settings() {
                 data-testid="input-printer-ip"
               />
               <p className="text-xs text-muted-foreground">
-                Find your printer's IP address on the touchscreen: Settings → Network → Wi-Fi
+                Find your printer's IP address on the touchscreen: Settings - Network - Wi-Fi
               </p>
             </div>
             <Button
@@ -241,6 +305,142 @@ export default function Settings() {
             </div>
           )}
         </div>
+
+        <Separator />
+
+        <Card className="p-6 bg-secondary/20 border-border">
+          <div className="flex items-center gap-2 mb-4">
+            <FolderOpen className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold">Watch Folder</h2>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            Automatically import G-code files saved to a folder on your Raspberry Pi. 
+            Great for network shares or when your slicer saves directly to the Pi.
+          </p>
+          
+          {settings?.watchFolder.path ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+                {settings.watchFolder.active ? (
+                  <CheckCircle className="h-5 w-5 text-green-500" />
+                ) : (
+                  <XCircle className="h-5 w-5 text-yellow-500" />
+                )}
+                <div className="flex-1">
+                  <p className="text-sm font-medium">
+                    {settings.watchFolder.active ? "Watching folder" : "Folder configured (not active)"}
+                  </p>
+                  <p className="text-xs text-muted-foreground font-mono">{settings.watchFolder.path}</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDisableWatchFolder}
+                  disabled={watchFolderMutation.isPending}
+                  data-testid="button-disable-watch"
+                >
+                  Disable
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid gap-2">
+                <Label htmlFor="watch-folder">Folder Path</Label>
+                <Input
+                  id="watch-folder"
+                  placeholder="/home/pi/gcode"
+                  value={watchFolderPath}
+                  onChange={(e) => setWatchFolderPath(e.target.value)}
+                  data-testid="input-watch-folder"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Enter the full path to a folder on your Raspberry Pi
+                </p>
+              </div>
+              <Button
+                onClick={handleSetWatchFolder}
+                disabled={watchFolderMutation.isPending || !watchFolderPath.trim()}
+                data-testid="button-set-watch-folder"
+              >
+                <FolderOpen className="h-4 w-4 mr-2" />
+                Enable Watch Folder
+              </Button>
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-6 bg-secondary/20 border-border">
+          <div className="flex items-center gap-2 mb-4">
+            <ExternalLink className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold">Slicer Integration</h2>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            Configure your slicer (Cura, PrusaSlicer, etc.) to send G-code files directly to this app.
+            Use the OctoPrint-compatible endpoint for best compatibility.
+          </p>
+          
+          {settings?.slicerApi && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">OctoPrint-Compatible URL (recommended)</Label>
+                <div className="flex gap-2">
+                  <Input
+                    readOnly
+                    value={settings.slicerApi.octoprintUrl}
+                    className="font-mono text-sm"
+                    data-testid="input-octoprint-url"
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => copyToClipboard(settings.slicerApi.octoprintUrl, "octoprint")}
+                    data-testid="button-copy-octoprint"
+                  >
+                    {copiedField === "octoprint" ? (
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Direct Upload URL</Label>
+                <div className="flex gap-2">
+                  <Input
+                    readOnly
+                    value={settings.slicerApi.directUrl}
+                    className="font-mono text-sm"
+                    data-testid="input-direct-url"
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => copyToClipboard(settings.slicerApi.directUrl, "direct")}
+                    data-testid="button-copy-direct"
+                  >
+                    {copiedField === "direct" ? (
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                <h3 className="font-medium text-sm mb-2 text-blue-400">Setup Instructions</h3>
+                <ul className="text-xs text-muted-foreground space-y-1">
+                  <li><strong>Cura:</strong> Install OctoPrint Connection plugin, set URL to your Pi's address</li>
+                  <li><strong>PrusaSlicer:</strong> Printer Settings - Physical Printer - Host Type: OctoPrint</li>
+                  <li><strong>Other slicers:</strong> Use OctoPrint upload if available, or POST to the direct URL</li>
+                </ul>
+              </div>
+            </div>
+          )}
+        </Card>
 
         <Card className="p-6 bg-blue-500/10 border-blue-500/50">
           <h3 className="font-semibold mb-2 text-blue-400">Connection Instructions</h3>

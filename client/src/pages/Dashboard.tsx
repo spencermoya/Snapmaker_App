@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import PrinterStatus from "@/components/PrinterStatus";
 import TemperatureChart from "@/components/TemperatureChart";
 import JogControls from "@/components/JogControls";
@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Power, Settings, Fan, Lightbulb, PauseCircle, StopCircle, Plus, RefreshCw, Wifi, WifiOff, Trash2, LayoutGrid } from "lucide-react";
+import { Power, Settings, Fan, Lightbulb, PauseCircle, StopCircle, Plus, RefreshCw, Wifi, WifiOff, Trash2, LayoutGrid, Upload } from "lucide-react";
 import { toast } from "sonner";
 import type { Printer, PrinterStatus as PrinterStatusType } from "@shared/schema";
 import { DEFAULT_ENABLED_MODULES } from "@shared/schema";
@@ -42,6 +42,8 @@ export default function Dashboard() {
   const [newPrinterIp, setNewPrinterIp] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragCounter, setDragCounter] = useState(0);
 
   const { data: printers = [], isLoading: printersLoading } = useQuery<Printer[]>({
     queryKey: ["/api/printers"],
@@ -197,6 +199,91 @@ export default function Dashboard() {
     },
   });
 
+  const uploadFileMutation = useMutation({
+    mutationFn: async ({ file, printerId }: { file: File; printerId: number }) => {
+      const fileContent = await file.text();
+      const res = await fetch(`/api/printers/${printerId}/uploaded-files`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: file.name,
+          displayName: file.name.replace(/\.[^/.]+$/, ""),
+          fileContent,
+          source: "drag-drop",
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to upload file");
+      }
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      toast.success("File uploaded successfully!");
+      queryClient.invalidateQueries({ queryKey: [`/api/printers/${variables.printerId}/uploaded-files`] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragCounter((prev) => prev + 1);
+    if (e.dataTransfer.types.includes("Files")) {
+      setIsDragging(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragCounter((prev) => {
+      const newCount = prev - 1;
+      if (newCount === 0) {
+        setIsDragging(false);
+      }
+      return newCount;
+    });
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    setDragCounter(0);
+
+    const files = Array.from(e.dataTransfer.files);
+    const gcodeFiles = files.filter((f) => 
+      f.name.endsWith(".gcode") || f.name.endsWith(".nc") || f.name.endsWith(".cnc")
+    );
+
+    if (gcodeFiles.length === 0) {
+      toast.error("Please drop G-code files (.gcode, .nc, .cnc)");
+      return;
+    }
+
+    // Use connected printer, or fall back to first printer with token, or just first printer
+    const printer = printers.find((p) => p.isConnected) 
+      || printers.find((p) => p.token) 
+      || printers[0];
+    
+    if (!printer) {
+      toast.error("Add a printer in Settings first");
+      return;
+    }
+
+    gcodeFiles.forEach((file) => {
+      uploadFileMutation.mutate({ file, printerId: printer.id });
+    });
+  }, [printers, uploadFileMutation]);
+
   useEffect(() => {
     if (
       pingResult?.online &&
@@ -315,7 +402,25 @@ export default function Dashboard() {
   const rightModules = MODULE_REGISTRY.filter((m) => m.column === "right" && enabledModules.includes(m.id));
 
   return (
-    <div className="min-h-screen bg-background p-6">
+    <div 
+      className="min-h-screen bg-background p-6 relative"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {isDragging && (
+        <div 
+          className="fixed inset-0 bg-primary/20 backdrop-blur-sm z-50 flex items-center justify-center pointer-events-none"
+          data-testid="drop-zone-overlay"
+        >
+          <div className="bg-background border-2 border-dashed border-primary rounded-xl p-12 text-center">
+            <Upload className="h-16 w-16 mx-auto text-primary mb-4" />
+            <h2 className="text-2xl font-bold mb-2">Drop G-code Files Here</h2>
+            <p className="text-muted-foreground">Release to upload .gcode, .nc, or .cnc files</p>
+          </div>
+        </div>
+      )}
       <div className="max-w-7xl mx-auto space-y-6">
         
         {/* Printer Connection Section - Always at top */}
