@@ -63,6 +63,11 @@ shared/           # Shared code between frontend/backend
 - Token-based authentication for printer connections
 - Auto-reconnect feature: When disconnected, monitors if printer comes online and attempts automatic reconnection using saved token
 - **File tracking workaround**: Snapmaker API doesn't support file listing. Users manually add filenames to track files uploaded via Luban. Files are stored in the `uploadedFiles` database table.
+- **Multiple file upload methods**:
+  - Manual upload via file picker in FileList component
+  - Drag & drop anywhere on the dashboard (global drop zone with overlay)
+  - Slicer integration: OctoPrint-compatible endpoints at `/api/files/local` and `/api/upload` for Cura, PrusaSlicer, etc.
+  - Watch folder: Configure a local folder path in Settings; new G-code files are auto-imported (uses `server/fileWatcher.ts`)
 - Customizable dashboard: Users can toggle modules (status, webcam, temperature, jog controls, job controls, file list) on/off via the customize panel
 
 ### UI Libraries
