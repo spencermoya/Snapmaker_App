@@ -12,6 +12,7 @@ export interface IStorage {
   getDashboardPreferences(printerId: number): Promise<string[]>;
   setDashboardPreferences(printerId: number, enabledModules: string[]): Promise<void>;
   getUploadedFiles(printerId: number): Promise<UploadedFile[]>;
+  getUploadedFile(id: number, printerId: number): Promise<UploadedFile | undefined>;
   addUploadedFile(file: InsertUploadedFile): Promise<UploadedFile>;
   deleteUploadedFile(id: number, printerId: number): Promise<boolean>;
 }
@@ -84,6 +85,15 @@ export class DbStorage implements IStorage {
       .select()
       .from(uploadedFiles)
       .where(eq(uploadedFiles.printerId, printerId));
+  }
+
+  async getUploadedFile(id: number, printerId: number): Promise<UploadedFile | undefined> {
+    const result = await db
+      .select()
+      .from(uploadedFiles)
+      .where(and(eq(uploadedFiles.id, id), eq(uploadedFiles.printerId, printerId)))
+      .limit(1);
+    return result[0];
   }
 
   async addUploadedFile(file: InsertUploadedFile): Promise<UploadedFile> {

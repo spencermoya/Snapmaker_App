@@ -444,19 +444,50 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Printer not connected" });
       }
 
-      const { filename } = req.body;
+      const { fileId } = req.body;
       
-      if (!filename) {
-        return res.status(400).json({ error: "Filename is required" });
+      if (!fileId) {
+        return res.status(400).json({ error: "File ID is required" });
       }
 
-      await snapmakerRequest(
-        printer.ipAddress,
-        "/api/v1/start_print",
-        "POST",
-        `token=${printer.token}&filename=${encodeURIComponent(filename)}`,
-        printer.token
-      );
+      const file = await storage.getUploadedFile(parseInt(fileId), printerId);
+      
+      if (!file) {
+        return res.status(404).json({ error: "File not found" });
+      }
+
+      if (!file.fileContent) {
+        return res.status(400).json({ error: "No file content stored. Please upload the G-code file first." });
+      }
+
+      const boundary = "----WebKitFormBoundary" + Math.random().toString(36).substring(2);
+      const body = [
+        `--${boundary}`,
+        `Content-Disposition: form-data; name="token"`,
+        ``,
+        printer.token,
+        `--${boundary}`,
+        `Content-Disposition: form-data; name="file"; filename="${file.filename}"`,
+        `Content-Type: application/octet-stream`,
+        ``,
+        file.fileContent,
+        `--${boundary}--`
+      ].join("\r\n");
+
+      const url = `http://${printer.ipAddress}:${SNAPMAKER_PORT}/api/v1/upload`;
+      
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        },
+        body,
+        signal: AbortSignal.timeout(60000),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.status}`);
+      }
 
       res.json({ message: "Print started" });
     } catch (error) {
@@ -537,7 +568,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Printer not found" });
       }
 
-      const { filename, source } = req.body;
+      const { filename, displayName, fileContent, source } = req.body;
       
       if (!filename) {
         return res.status(400).json({ error: "Filename is required" });
@@ -546,6 +577,8 @@ export async function registerRoutes(
       const file = await storage.addUploadedFile({
         printerId,
         filename,
+        displayName: displayName || null,
+        fileContent: fileContent || null,
         source: source || "manual",
       });
 
