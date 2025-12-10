@@ -510,5 +510,64 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/printers/:id/uploaded-files", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const printer = await storage.getPrinter(printerId);
+      
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+
+      const files = await storage.getUploadedFiles(printerId);
+      res.json(files);
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to fetch uploaded files",
+      });
+    }
+  });
+
+  app.post("/api/printers/:id/uploaded-files", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const printer = await storage.getPrinter(printerId);
+      
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+
+      const { filename, source } = req.body;
+      
+      if (!filename) {
+        return res.status(400).json({ error: "Filename is required" });
+      }
+
+      const file = await storage.addUploadedFile({
+        printerId,
+        filename,
+        source: source || "manual",
+      });
+
+      res.status(201).json(file);
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to add file",
+      });
+    }
+  });
+
+  app.delete("/api/printers/:id/uploaded-files/:fileId", async (req, res) => {
+    try {
+      const fileId = parseInt(req.params.fileId);
+      await storage.deleteUploadedFile(fileId);
+      res.json({ message: "File removed" });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to remove file",
+      });
+    }
+  });
+
   return httpServer;
 }
