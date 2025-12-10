@@ -68,7 +68,7 @@ export default function JogControls({ printerId }: JogControlsProps) {
   return (
     <Card className="shadow-lg">
       <CardHeader className="pb-3">
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center gap-2">
           <CardTitle className="text-sm font-medium uppercase tracking-widest text-muted-foreground">
             Jog Controls
           </CardTitle>

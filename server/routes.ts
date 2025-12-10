@@ -153,7 +153,7 @@ export async function registerRoutes(
       });
 
       const status: PrinterStatus = {
-        state: statusData.state || "idle",
+        state: statusData.status || statusData.state || "idle",
         temperature: {
           nozzle: statusData.temperature?.nozzle || 0,
           bed: statusData.temperature?.bed || 0,

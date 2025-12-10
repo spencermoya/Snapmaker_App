@@ -71,7 +71,7 @@ export default function FileList({ printerId }: FileListProps) {
 
   return (
     <Card className="h-full shadow-lg">
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
         <CardTitle className="text-sm font-medium uppercase tracking-widest text-muted-foreground">
           Printer Storage
         </CardTitle>
