@@ -335,9 +335,9 @@ export async function registerRoutes(
       const gcode = `G91\nG0 ${axis.toUpperCase()}${distance} F3000\nG90`;
       await snapmakerRequest(
         printer.ipAddress,
-        "/api/v1/execute_gcode",
+        "/api/v1/execute_code",
         "POST",
-        `token=${encodeURIComponent(printer.token)}&gcode=${encodeURIComponent(gcode)}`,
+        `token=${encodeURIComponent(printer.token)}&code=${encodeURIComponent(gcode)}`,
         printer.token
       );
 
@@ -368,9 +368,9 @@ export async function registerRoutes(
       const gcode = `G28 ${homeAxes}`;
       await snapmakerRequest(
         printer.ipAddress,
-        "/api/v1/execute_gcode",
+        "/api/v1/execute_code",
         "POST",
-        `token=${encodeURIComponent(printer.token)}&gcode=${encodeURIComponent(gcode)}`,
+        `token=${encodeURIComponent(printer.token)}&code=${encodeURIComponent(gcode)}`,
         printer.token
       );
 
