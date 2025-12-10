@@ -61,6 +61,8 @@ shared/           # Shared code between frontend/backend
 - Direct HTTP communication with Snapmaker printers on port 8080
 - Endpoints for status polling, connection management, and control commands
 - Token-based authentication for printer connections
+- Auto-reconnect feature: When disconnected, monitors if printer comes online and attempts automatic reconnection using saved token
+- File list feature: Displays files stored on printer with print button functionality
 
 ### UI Libraries
 - **Radix UI**: Headless component primitives for accessibility
