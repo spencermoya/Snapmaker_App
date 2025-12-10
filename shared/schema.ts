@@ -31,6 +31,8 @@ export const uploadedFiles = pgTable("uploaded_files", {
   id: serial("id").primaryKey(),
   printerId: integer("printer_id").references(() => printers.id).notNull(),
   filename: text("filename").notNull(),
+  displayName: text("display_name"),
+  fileContent: text("file_content"),
   uploadedAt: timestamp("uploaded_at").defaultNow(),
   source: text("source").notNull(),
 });
