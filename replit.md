@@ -62,7 +62,7 @@ shared/           # Shared code between frontend/backend
 - Endpoints for status polling, connection management, and control commands
 - Token-based authentication for printer connections
 - Auto-reconnect feature: When disconnected, monitors if printer comes online and attempts automatic reconnection using saved token
-- File list feature: Displays files stored on printer with print button functionality
+- **File tracking workaround**: Snapmaker API doesn't support file listing. Users manually add filenames to track files uploaded via Luban. Files are stored in the `uploadedFiles` database table.
 - Customizable dashboard: Users can toggle modules (status, webcam, temperature, jog controls, job controls, file list) on/off via the customize panel
 
 ### UI Libraries
