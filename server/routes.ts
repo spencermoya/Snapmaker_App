@@ -332,16 +332,20 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Axis and distance are required" });
       }
 
-      const gcode = `G91\nG0 ${axis.toUpperCase()}${distance} F3000\nG90`;
-      console.log(`Sending jog command: ${gcode.replace(/\n/g, '\\n')}`);
-      const result = await snapmakerRequest(
-        printer.ipAddress,
-        "/api/v1/execute_code",
-        "POST",
-        `token=${encodeURIComponent(printer.token)}&code=${encodeURIComponent(gcode)}`,
-        printer.token
-      );
-      console.log(`Jog response:`, result);
+      const sendGcode = async (code: string) => {
+        console.log(`Sending G-code: ${code}`);
+        return await snapmakerRequest(
+          printer.ipAddress,
+          "/api/v1/execute_code",
+          "POST",
+          `token=${encodeURIComponent(printer.token!)}&code=${encodeURIComponent(code)}`,
+          printer.token!
+        );
+      };
+
+      await sendGcode("G91");
+      await sendGcode(`G0 ${axis.toUpperCase()}${distance} F3000`);
+      await sendGcode("G90");
 
       res.json({ message: "Jog command sent" });
     } catch (error) {
@@ -387,16 +391,20 @@ export async function registerRoutes(
   app.get("/api/printers/:id/files", async (req, res) => {
     try {
       const printerId = parseInt(req.params.id);
+      console.log(`Fetching files for printer ${printerId}`);
       const printer = await storage.getPrinter(printerId);
       
       if (!printer) {
+        console.log(`Printer ${printerId} not found`);
         return res.status(404).json({ error: "Printer not found" });
       }
 
       if (!printer.token) {
+        console.log(`Printer ${printerId} not connected (no token)`);
         return res.status(400).json({ error: "Printer not connected" });
       }
 
+      console.log(`Requesting files from ${printer.ipAddress}`);
       const result = await snapmakerRequest(
         printer.ipAddress,
         `/api/v1/files?token=${printer.token}`,
@@ -404,6 +412,7 @@ export async function registerRoutes(
         undefined,
         printer.token
       );
+      console.log(`Files response:`, JSON.stringify(result).substring(0, 500));
 
       const files = (result.files || []).map((file: any, index: number) => ({
         id: index + 1,
@@ -412,8 +421,10 @@ export async function registerRoutes(
         date: file.date || file.modified || "Unknown",
       }));
 
+      console.log(`Returning ${files.length} files`);
       res.json(files);
     } catch (error) {
+      console.log(`Files error:`, error instanceof Error ? error.message : error);
       res.status(500).json({
         error: error instanceof Error ? error.message : "Failed to fetch files",
       });
