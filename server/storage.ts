@@ -13,7 +13,7 @@ export interface IStorage {
   setDashboardPreferences(printerId: number, enabledModules: string[]): Promise<void>;
   getUploadedFiles(printerId: number): Promise<UploadedFile[]>;
   addUploadedFile(file: InsertUploadedFile): Promise<UploadedFile>;
-  deleteUploadedFile(id: number): Promise<void>;
+  deleteUploadedFile(id: number, printerId: number): Promise<boolean>;
 }
 
 export class DbStorage implements IStorage {
@@ -91,8 +91,12 @@ export class DbStorage implements IStorage {
     return result[0]!;
   }
 
-  async deleteUploadedFile(id: number): Promise<void> {
-    await db.delete(uploadedFiles).where(eq(uploadedFiles.id, id));
+  async deleteUploadedFile(id: number, printerId: number): Promise<boolean> {
+    const result = await db
+      .delete(uploadedFiles)
+      .where(and(eq(uploadedFiles.id, id), eq(uploadedFiles.printerId, printerId)))
+      .returning();
+    return result.length > 0;
   }
 }
 

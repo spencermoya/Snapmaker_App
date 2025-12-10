@@ -559,8 +559,19 @@ export async function registerRoutes(
 
   app.delete("/api/printers/:id/uploaded-files/:fileId", async (req, res) => {
     try {
+      const printerId = parseInt(req.params.id);
       const fileId = parseInt(req.params.fileId);
-      await storage.deleteUploadedFile(fileId);
+      
+      const printer = await storage.getPrinter(printerId);
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+
+      const deleted = await storage.deleteUploadedFile(fileId, printerId);
+      if (!deleted) {
+        return res.status(404).json({ error: "File not found" });
+      }
+
       res.json({ message: "File removed" });
     } catch (error) {
       res.status(500).json({
