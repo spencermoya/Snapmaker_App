@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { useEffect, useState } from "react";
 import PrinterStatus from "@/components/PrinterStatus";
 import TemperatureChart from "@/components/TemperatureChart";
 import JogControls from "@/components/JogControls";
@@ -8,11 +9,15 @@ import WebcamFeed from "@/components/WebcamFeed";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Power, Settings, Fan, Lightbulb, PauseCircle, StopCircle, Plus } from "lucide-react";
+import { Power, Settings, Fan, Lightbulb, PauseCircle, StopCircle, Plus, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 import type { Printer, PrinterStatus as PrinterStatusType } from "@shared/schema";
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
+  const [autoReconnecting, setAutoReconnecting] = useState(false);
+  const [lastReconnectAttempt, setLastReconnectAttempt] = useState<number>(0);
 
   const { data: printers = [], isLoading: printersLoading } = useQuery<Printer[]>({
     queryKey: ["/api/printers"],
@@ -20,6 +25,48 @@ export default function Dashboard() {
   });
 
   const activePrinter = printers.find((p) => p.isConnected);
+  const disconnectedPrinter = printers.find((p) => !p.isConnected && p.token);
+
+  const { data: pingResult } = useQuery<{ online: boolean; hasToken: boolean }>({
+    queryKey: [`/api/printers/${disconnectedPrinter?.id}/ping`],
+    enabled: !!disconnectedPrinter && !activePrinter,
+    refetchInterval: 10000,
+  });
+
+  const autoReconnectMutation = useMutation({
+    mutationFn: async (printerId: number) => {
+      const res = await fetch(`/api/printers/${printerId}/auto-reconnect`, {
+        method: "POST",
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success("Reconnected to printer!");
+        queryClient.invalidateQueries({ queryKey: ["/api/printers"] });
+      } else if (data.requiresConfirmation) {
+        toast.info("Please confirm on the printer touchscreen, then we'll try again");
+      }
+      setAutoReconnecting(false);
+    },
+    onError: () => {
+      setAutoReconnecting(false);
+    },
+  });
+
+  useEffect(() => {
+    if (
+      pingResult?.online &&
+      disconnectedPrinter &&
+      !activePrinter &&
+      !autoReconnecting &&
+      Date.now() - lastReconnectAttempt > 30000
+    ) {
+      setAutoReconnecting(true);
+      setLastReconnectAttempt(Date.now());
+      autoReconnectMutation.mutate(disconnectedPrinter.id);
+    }
+  }, [pingResult, disconnectedPrinter, activePrinter, autoReconnecting, lastReconnectAttempt]);
 
   const { data: status, isLoading: statusLoading } = useQuery<PrinterStatusType>({
     queryKey: [`/api/printers/${activePrinter?.id}/status`],
@@ -79,6 +126,41 @@ export default function Dashboard() {
               You have {printers.length} printer{printers.length > 1 ? "s" : ""} configured, but
               none are currently connected.
             </p>
+            
+            {disconnectedPrinter && (
+              <div className="mt-4 p-4 bg-secondary/30 rounded-lg space-y-2">
+                <p className="text-sm font-medium">
+                  {disconnectedPrinter.name} ({disconnectedPrinter.ipAddress})
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {autoReconnecting ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <RefreshCw className="h-3 w-3 animate-spin" />
+                      Attempting to reconnect...
+                    </span>
+                  ) : pingResult?.online ? (
+                    "Printer detected online - auto-reconnecting..."
+                  ) : (
+                    "Waiting for printer to come online..."
+                  )}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setAutoReconnecting(true);
+                    setLastReconnectAttempt(Date.now());
+                    autoReconnectMutation.mutate(disconnectedPrinter.id);
+                  }}
+                  disabled={autoReconnecting}
+                  data-testid="button-manual-reconnect"
+                >
+                  <RefreshCw className={`h-3 w-3 mr-2 ${autoReconnecting ? 'animate-spin' : ''}`} />
+                  Try Reconnect Now
+                </Button>
+              </div>
+            )}
+            
             <Button
               onClick={() => setLocation("/settings")}
               size="lg"

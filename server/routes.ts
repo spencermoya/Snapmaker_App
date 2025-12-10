@@ -232,6 +232,87 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/printers/:id/ping", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const printer = await storage.getPrinter(printerId);
+      
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+
+      const url = `http://${printer.ipAddress}:${SNAPMAKER_PORT}/api/v1/status`;
+      const response = await fetch(url, {
+        method: "GET",
+        signal: AbortSignal.timeout(2000),
+      });
+
+      res.json({ 
+        online: response.ok || response.status === 401 || response.status === 403,
+        hasToken: !!printer.token 
+      });
+    } catch (error) {
+      res.json({ online: false, hasToken: false });
+    }
+  });
+
+  app.post("/api/printers/:id/auto-reconnect", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const printer = await storage.getPrinter(printerId);
+      
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+
+      if (!printer.token) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "No saved token. Manual connection required first." 
+        });
+      }
+
+      const result = await snapmakerRequest(
+        printer.ipAddress,
+        "/api/v1/connect",
+        "POST",
+        `token=${printer.token}`,
+        printer.token
+      );
+
+      if (result.token || result.status === 200) {
+        if (result.token) {
+          await storage.updatePrinter(printerId, {
+            token: result.token,
+            isConnected: true,
+            lastSeen: new Date(),
+          });
+        } else {
+          await storage.updatePrinter(printerId, {
+            isConnected: true,
+            lastSeen: new Date(),
+          });
+        }
+        return res.json({ success: true, message: "Auto-reconnected successfully" });
+      }
+
+      if (result.status === 204) {
+        return res.json({ 
+          success: false, 
+          requiresConfirmation: true,
+          message: "Touchscreen confirmation required" 
+        });
+      }
+
+      res.json({ success: false, error: "Could not reconnect" });
+    } catch (error) {
+      res.json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : "Reconnection failed" 
+      });
+    }
+  });
+
   app.post("/api/printers/:id/jog", async (req, res) => {
     try {
       const printerId = parseInt(req.params.id);
