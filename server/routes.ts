@@ -461,18 +461,20 @@ export async function registerRoutes(
       }
 
       const boundary = "----WebKitFormBoundary" + Math.random().toString(36).substring(2);
-      const body = [
-        `--${boundary}`,
-        `Content-Disposition: form-data; name="token"`,
-        ``,
-        printer.token,
-        `--${boundary}`,
-        `Content-Disposition: form-data; name="file"; filename="${file.filename}"`,
-        `Content-Type: application/octet-stream`,
-        ``,
-        file.fileContent,
-        `--${boundary}--`
-      ].join("\r\n");
+      
+      const parts: string[] = [];
+      parts.push(`--${boundary}\r\n`);
+      parts.push(`Content-Disposition: form-data; name="token"\r\n`);
+      parts.push(`\r\n`);
+      parts.push(`${printer.token}\r\n`);
+      parts.push(`--${boundary}\r\n`);
+      parts.push(`Content-Disposition: form-data; name="file"; filename="${file.filename}"\r\n`);
+      parts.push(`Content-Type: application/octet-stream\r\n`);
+      parts.push(`\r\n`);
+      parts.push(file.fileContent);
+      parts.push(`\r\n--${boundary}--\r\n`);
+      
+      const body = parts.join("");
 
       const url = `http://${printer.ipAddress}:${SNAPMAKER_PORT}/api/v1/upload`;
       
@@ -482,7 +484,7 @@ export async function registerRoutes(
           "Content-Type": `multipart/form-data; boundary=${boundary}`,
         },
         body,
-        signal: AbortSignal.timeout(60000),
+        signal: AbortSignal.timeout(120000),
       });
 
       if (!response.ok) {
