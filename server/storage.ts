@@ -1,6 +1,6 @@
-import { type Printer, type InsertPrinter, type DashboardPreferences, printers, printJobs, dashboardPreferences, DEFAULT_ENABLED_MODULES } from "@shared/schema";
+import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, printers, printJobs, dashboardPreferences, uploadedFiles, DEFAULT_ENABLED_MODULES } from "@shared/schema";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 export interface IStorage {
   getPrinter(id: number): Promise<Printer | undefined>;
@@ -11,6 +11,9 @@ export interface IStorage {
   deletePrinter(id: number): Promise<void>;
   getDashboardPreferences(printerId: number): Promise<string[]>;
   setDashboardPreferences(printerId: number, enabledModules: string[]): Promise<void>;
+  getUploadedFiles(printerId: number): Promise<UploadedFile[]>;
+  addUploadedFile(file: InsertUploadedFile): Promise<UploadedFile>;
+  deleteUploadedFile(id: number): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -74,6 +77,22 @@ export class DbStorage implements IStorage {
         enabledModules,
       });
     }
+  }
+
+  async getUploadedFiles(printerId: number): Promise<UploadedFile[]> {
+    return await db
+      .select()
+      .from(uploadedFiles)
+      .where(eq(uploadedFiles.printerId, printerId));
+  }
+
+  async addUploadedFile(file: InsertUploadedFile): Promise<UploadedFile> {
+    const result = await db.insert(uploadedFiles).values(file).returning();
+    return result[0]!;
+  }
+
+  async deleteUploadedFile(id: number): Promise<void> {
+    await db.delete(uploadedFiles).where(eq(uploadedFiles.id, id));
   }
 }
 
