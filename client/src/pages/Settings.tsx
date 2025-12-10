@@ -24,6 +24,7 @@ interface SettingsData {
     enabled: boolean;
     port: number;
     targetPrinterIp: string | null;
+    hasToken: boolean;
   };
 }
 
@@ -295,16 +296,24 @@ export default function Settings() {
                       <p className="text-sm text-muted-foreground" data-testid={`text-printer-ip-${printer.id}`}>
                         {printer.ipAddress}
                       </p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <div
-                          className={`h-2 w-2 rounded-full ${
-                            printer.isConnected ? "bg-green-500" : "bg-gray-500"
-                          }`}
-                          data-testid={`status-connection-${printer.id}`}
-                        />
-                        <span className="text-xs text-muted-foreground">
-                          {printer.isConnected ? "Connected" : "Disconnected"}
-                        </span>
+                      <div className="flex items-center gap-4 mt-2">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className={`h-2 w-2 rounded-full ${
+                              printer.isConnected ? "bg-green-500" : "bg-gray-500"
+                            }`}
+                            data-testid={`status-connection-${printer.id}`}
+                          />
+                          <span className="text-xs text-muted-foreground">
+                            {printer.isConnected ? "Connected" : "Disconnected"}
+                          </span>
+                        </div>
+                        {printer.token && (
+                          <div className="flex items-center gap-1">
+                            <CheckCircle className="h-3 w-3 text-green-500" />
+                            <span className="text-xs text-green-500">Has Token</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -515,13 +524,36 @@ export default function Settings() {
                   Disable
                 </Button>
               </div>
+
+              {settings.lubanProxy.hasToken ? (
+                <div className="flex items-center gap-3 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+                  <CheckCircle className="h-5 w-5 text-green-500" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Luban Token Captured</p>
+                    <p className="text-xs text-muted-foreground">
+                      Your printer will now connect without touchscreen prompts using Luban's credentials.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                  <Radio className="h-5 w-5 text-yellow-500" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Waiting for Luban Connection</p>
+                    <p className="text-xs text-muted-foreground">
+                      Connect through Luban once to capture its token. After that, our app will use the same token for prompt-free connections.
+                    </p>
+                  </div>
+                </div>
+              )}
               
               <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
                 <h3 className="font-medium text-sm mb-2 text-blue-400">How to Use</h3>
                 <p className="text-xs text-muted-foreground">
                   In Luban, instead of connecting to <code className="bg-muted px-1 rounded">{settings.lubanProxy.targetPrinterIp}</code>, 
                   connect to this Raspberry Pi's IP address on the same port. Files sent through 
-                  Luban will be captured and appear in your file list automatically.
+                  Luban will be captured and appear in your file list automatically, and the token 
+                  will be saved for prompt-free connections.
                 </p>
               </div>
             </div>
