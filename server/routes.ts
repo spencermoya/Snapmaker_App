@@ -82,25 +82,42 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Printer not found" });
       }
 
-      const token = printer.token || "";
+      const existingToken = printer.token || "";
       const result = await snapmakerRequest(
         printer.ipAddress,
         "/api/v1/connect",
         "POST",
-        `token=${token}`,
-        token
+        `token=${existingToken}`,
+        existingToken
       );
 
+      if (result.token) {
+        await storage.updatePrinter(printerId, {
+          token: result.token,
+          isConnected: true,
+          lastSeen: new Date(),
+        });
+        return res.json({
+          message: "Connected successfully",
+          requiresConfirmation: false,
+        });
+      }
+
+      if (result.status === 204) {
+        return res.json({
+          message: "Please confirm connection on printer touchscreen, then click Connect again",
+          requiresConfirmation: true,
+        });
+      }
+
       await storage.updatePrinter(printerId, {
-        isConnected: result.status === 204 || result.status === 200,
+        isConnected: true,
         lastSeen: new Date(),
       });
 
       res.json({
-        message: result.status === 204
-          ? "Please confirm connection on printer touchscreen"
-          : "Connected successfully",
-        requiresConfirmation: result.status === 204,
+        message: "Connected successfully",
+        requiresConfirmation: false,
       });
     } catch (error) {
       res.status(500).json({
@@ -110,8 +127,8 @@ export async function registerRoutes(
   });
 
   app.get("/api/printers/:id/status", async (req, res) => {
+    const printerId = parseInt(req.params.id);
     try {
-      const printerId = parseInt(req.params.id);
       const printer = await storage.getPrinter(printerId);
       
       if (!printer) {
