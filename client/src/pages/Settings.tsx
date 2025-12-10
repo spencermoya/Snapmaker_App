@@ -69,7 +69,6 @@ export default function Settings() {
         });
       } else {
         toast.success("Connected successfully");
-        setLocation("/");
       }
     },
     onError: (error: Error) => {
