@@ -12,39 +12,41 @@ function parseMultipartFormData(
   buffer: Buffer,
   boundary: string
 ): { token?: string; filename?: string; fileContent?: Buffer } {
-  const boundaryBuffer = Buffer.from(`--${boundary}`);
   const result: { token?: string; filename?: string; fileContent?: Buffer } = {};
-
-  let start = 0;
-  let partStart = buffer.indexOf(boundaryBuffer, start);
-
-  while (partStart !== -1) {
-    const nextBoundary = buffer.indexOf(boundaryBuffer, partStart + boundaryBuffer.length);
-    if (nextBoundary === -1) break;
-
-    const partContent = buffer.slice(partStart + boundaryBuffer.length, nextBoundary);
-    const headerEnd = partContent.indexOf(Buffer.from("\r\n\r\n"));
+  const boundaryStr = `--${boundary}`;
+  const endBoundaryStr = `--${boundary}--`;
+  
+  const text = buffer.toString("binary");
+  const parts = text.split(boundaryStr);
+  
+  for (const part of parts) {
+    if (!part || part === "--" || part.trim() === "--" || part.startsWith("--")) continue;
     
-    if (headerEnd !== -1) {
-      const headers = partContent.slice(0, headerEnd).toString("utf-8");
-      const body = partContent.slice(headerEnd + 4);
-
-      if (headers.includes('name="token"')) {
-        result.token = body.toString("utf-8").trim();
-      } else if (headers.includes('name="file"')) {
-        const filenameMatch = headers.match(/filename="([^"]+)"/);
-        if (filenameMatch) {
-          result.filename = filenameMatch[1];
-        }
-        let cleanBody = body;
-        if (body.slice(-2).toString() === "\r\n") {
-          cleanBody = body.slice(0, -2);
-        }
-        result.fileContent = cleanBody;
-      }
+    const headerEndIdx = part.indexOf("\r\n\r\n");
+    if (headerEndIdx === -1) continue;
+    
+    const headers = part.slice(0, headerEndIdx);
+    let body = part.slice(headerEndIdx + 4);
+    
+    if (body.endsWith("\r\n")) {
+      body = body.slice(0, -2);
     }
-
-    partStart = nextBoundary;
+    if (body.endsWith("--")) {
+      body = body.slice(0, -2);
+    }
+    if (body.endsWith("\r\n")) {
+      body = body.slice(0, -2);
+    }
+    
+    if (headers.includes('name="token"')) {
+      result.token = body.trim();
+    } else if (headers.includes('name="file"')) {
+      const filenameMatch = headers.match(/filename="([^"]+)"/);
+      if (filenameMatch) {
+        result.filename = filenameMatch[1];
+      }
+      result.fileContent = Buffer.from(body, "binary");
+    }
   }
 
   return result;
