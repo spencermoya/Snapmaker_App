@@ -232,5 +232,179 @@ export async function registerRoutes(
     }
   });
 
+  // Jog controls - move the print head
+  app.post("/api/printers/:id/jog", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const { axis, distance } = req.body;
+      
+      const printer = await storage.getPrinter(printerId);
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+      if (!printer.token) {
+        return res.status(400).json({ error: "Printer not connected" });
+      }
+
+      // Validate axis and distance
+      if (!["X", "Y", "Z"].includes(axis)) {
+        return res.status(400).json({ error: "Invalid axis. Must be X, Y, or Z" });
+      }
+      
+      const dist = parseFloat(distance);
+      if (isNaN(dist)) {
+        return res.status(400).json({ error: "Invalid distance" });
+      }
+
+      // Send G-code command to move the axis
+      const gcode = `G91\nG0 ${axis}${dist}\nG90`;
+      await snapmakerRequest(
+        printer.ipAddress,
+        "/api/v1/execute_code",
+        "POST",
+        `token=${printer.token}&code=${encodeURIComponent(gcode)}`,
+        printer.token
+      );
+
+      res.json({ message: `Moved ${axis} axis by ${dist}mm` });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to jog printer",
+      });
+    }
+  });
+
+  // Home the printer
+  app.post("/api/printers/:id/home", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const { axes } = req.body; // Optional: specify which axes to home
+      
+      const printer = await storage.getPrinter(printerId);
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+      if (!printer.token) {
+        return res.status(400).json({ error: "Printer not connected" });
+      }
+
+      // G28 homes all axes, or specific ones if provided
+      const gcode = axes ? `G28 ${axes}` : "G28";
+      await snapmakerRequest(
+        printer.ipAddress,
+        "/api/v1/execute_code",
+        "POST",
+        `token=${printer.token}&code=${encodeURIComponent(gcode)}`,
+        printer.token
+      );
+
+      res.json({ message: "Homing started" });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to home printer",
+      });
+    }
+  });
+
+  // Get files from printer storage
+  app.get("/api/printers/:id/files", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const printer = await storage.getPrinter(printerId);
+      
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+      if (!printer.token) {
+        return res.status(400).json({ error: "Printer not connected" });
+      }
+
+      const result = await snapmakerRequest(
+        printer.ipAddress,
+        `/api/v1/files?token=${printer.token}`,
+        "GET",
+        undefined,
+        printer.token
+      );
+
+      // Normalize the file list response
+      const files = (result.files || result || []).map((file: any, index: number) => ({
+        id: index + 1,
+        name: file.name || file.filename || "Unknown",
+        size: file.size || 0,
+        date: file.date || file.modified || null,
+      }));
+
+      res.json(files);
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to fetch files",
+      });
+    }
+  });
+
+  // Start printing a file
+  app.post("/api/printers/:id/print", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const { filename } = req.body;
+      
+      const printer = await storage.getPrinter(printerId);
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+      if (!printer.token) {
+        return res.status(400).json({ error: "Printer not connected" });
+      }
+
+      await snapmakerRequest(
+        printer.ipAddress,
+        "/api/v1/start_print",
+        "POST",
+        `token=${printer.token}&filename=${encodeURIComponent(filename)}`,
+        printer.token
+      );
+
+      res.json({ message: `Started printing ${filename}` });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to start print",
+      });
+    }
+  });
+
+  // Get current position
+  app.get("/api/printers/:id/position", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const printer = await storage.getPrinter(printerId);
+      
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+      if (!printer.token) {
+        return res.status(400).json({ error: "Printer not connected" });
+      }
+
+      const result = await snapmakerRequest(
+        printer.ipAddress,
+        `/api/v1/status?token=${printer.token}`,
+        "GET",
+        undefined,
+        printer.token
+      );
+
+      res.json({
+        x: result.x || result.position?.x || 0,
+        y: result.y || result.position?.y || 0,
+        z: result.z || result.position?.z || 0,
+      });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to get position",
+      });
+    }
+  });
+
   return httpServer;
 }

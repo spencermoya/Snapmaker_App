@@ -189,7 +189,7 @@ export default function Dashboard() {
 
           {/* Right Column: Controls & Files */}
           <div className="space-y-6">
-            <JogControls />
+            <JogControls printerId={activePrinter.id} />
             
             <Card className="p-4 bg-secondary/20 border-border">
                <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">Active Job Controls</h3>
@@ -211,7 +211,7 @@ export default function Dashboard() {
                </div>
             </Card>
 
-            <FileList />
+            <FileList printerId={activePrinter.id} />
           </div>
 
         </div>
