@@ -11,9 +11,27 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Power, Settings, Fan, Lightbulb, PauseCircle, StopCircle, Plus, RefreshCw, Wifi, WifiOff, Trash2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Power, Settings, Fan, Lightbulb, PauseCircle, StopCircle, Plus, RefreshCw, Wifi, WifiOff, Trash2, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import type { Printer, PrinterStatus as PrinterStatusType } from "@shared/schema";
+import { DEFAULT_ENABLED_MODULES } from "@shared/schema";
+
+type ModuleConfig = {
+  id: string;
+  title: string;
+  column: "left" | "right";
+};
+
+const MODULE_REGISTRY: ModuleConfig[] = [
+  { id: "status", title: "Printer Status", column: "left" },
+  { id: "webcam", title: "Camera Feed", column: "left" },
+  { id: "temperature", title: "Temperature Chart", column: "left" },
+  { id: "jogControls", title: "Jog Controls", column: "right" },
+  { id: "jobControls", title: "Job Controls", column: "right" },
+  { id: "fileList", title: "File List", column: "right" },
+];
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
@@ -23,6 +41,7 @@ export default function Dashboard() {
   const [newPrinterName, setNewPrinterName] = useState("");
   const [newPrinterIp, setNewPrinterIp] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
 
   const { data: printers = [], isLoading: printersLoading } = useQuery<Printer[]>({
     queryKey: ["/api/printers"],
@@ -31,6 +50,54 @@ export default function Dashboard() {
 
   const activePrinter = printers.find((p) => p.isConnected);
   const disconnectedPrinter = printers.find((p) => !p.isConnected && p.token);
+
+  const { data: preferencesData, isLoading: preferencesLoading } = useQuery<{ enabledModules: string[] }>({
+    queryKey: [`/api/printers/${activePrinter?.id}/dashboard-preferences`],
+    enabled: !!activePrinter,
+    staleTime: Infinity,
+  });
+
+  const enabledModules = preferencesData?.enabledModules ?? DEFAULT_ENABLED_MODULES;
+
+  const updatePreferencesMutation = useMutation({
+    mutationFn: async ({ printerId, enabledModules }: { printerId: number; enabledModules: string[] }) => {
+      const res = await fetch(`/api/printers/${printerId}/dashboard-preferences`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabledModules }),
+      });
+      if (!res.ok) throw new Error("Failed to save preferences");
+      return res.json();
+    },
+    onMutate: async ({ printerId, enabledModules }) => {
+      await queryClient.cancelQueries({ queryKey: [`/api/printers/${printerId}/dashboard-preferences`] });
+      const previousData = queryClient.getQueryData([`/api/printers/${printerId}/dashboard-preferences`]);
+      queryClient.setQueryData([`/api/printers/${printerId}/dashboard-preferences`], { enabledModules });
+      return { previousData };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData([`/api/printers/${variables.printerId}/dashboard-preferences`], context.previousData);
+      }
+      toast.error("Failed to save preferences");
+    },
+    onSettled: (data, error, variables) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/printers/${variables.printerId}/dashboard-preferences`] });
+    },
+  });
+
+  const toggleModule = (moduleId: string) => {
+    if (!activePrinter) return;
+    
+    const newEnabledModules = enabledModules.includes(moduleId)
+      ? enabledModules.filter((id) => id !== moduleId)
+      : [...enabledModules, moduleId];
+    
+    updatePreferencesMutation.mutate({
+      printerId: activePrinter.id,
+      enabledModules: newEnabledModules,
+    });
+  };
 
   const { data: pingResult } = useQuery<{ online: boolean; hasToken: boolean }>({
     queryKey: [`/api/printers/${disconnectedPrinter?.id}/ping`],
@@ -185,6 +252,66 @@ export default function Dashboard() {
     if (normalized.includes("error") || normalized.includes("fail")) return "error";
     return "idle";
   };
+
+  const renderModule = (moduleId: string) => {
+    if (!activePrinter || !enabledModules.includes(moduleId)) return null;
+
+    switch (moduleId) {
+      case "status":
+        return (
+          <PrinterStatus 
+            key={moduleId}
+            status={mapStatus(status?.state || "idle")} 
+            progress={status?.progress || 0} 
+            timeLeft={formatTimeRemaining(status?.timeRemaining || null)} 
+            filename={status?.currentFile || "No active job"} 
+          />
+        );
+      case "webcam":
+        return <WebcamFeed key={moduleId} />;
+      case "temperature":
+        return (
+          <TemperatureChart 
+            key={moduleId}
+            nozzleTemp={status?.temperature.nozzle || 0}
+            bedTemp={status?.temperature.bed || 0}
+            targetNozzle={status?.temperature.targetNozzle || 0}
+            targetBed={status?.temperature.targetBed || 0}
+          />
+        );
+      case "jogControls":
+        return <JogControls key={moduleId} printerId={activePrinter.id} />;
+      case "jobControls":
+        return (
+          <Card key={moduleId} className="p-4 bg-secondary/20 border-border">
+            <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">Active Job Controls</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                variant="outline"
+                className="w-full border-yellow-500/50 hover:bg-yellow-500/10 hover:text-yellow-500 text-yellow-500"
+                data-testid="button-pause"
+              >
+                <PauseCircle className="h-4 w-4 mr-2" /> Pause
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full border-red-500/50 hover:bg-red-500/10 hover:text-red-500 text-red-500"
+                data-testid="button-cancel"
+              >
+                <StopCircle className="h-4 w-4 mr-2" /> Cancel
+              </Button>
+            </div>
+          </Card>
+        );
+      case "fileList":
+        return <FileList key={moduleId} printerId={activePrinter.id} />;
+      default:
+        return null;
+    }
+  };
+
+  const leftModules = MODULE_REGISTRY.filter((m) => m.column === "left" && enabledModules.includes(m.id));
+  const rightModules = MODULE_REGISTRY.filter((m) => m.column === "right" && enabledModules.includes(m.id));
 
   return (
     <div className="min-h-screen bg-background p-6">
@@ -383,6 +510,47 @@ export default function Dashboard() {
                 >
                   <Fan className="h-4 w-4" />
                 </Button>
+                <Sheet open={customizeOpen} onOpenChange={setCustomizeOpen}>
+                  <SheetTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="text-muted-foreground hover:text-foreground"
+                      data-testid="button-customize"
+                    >
+                      <LayoutGrid className="h-4 w-4" />
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent>
+                    <SheetHeader>
+                      <SheetTitle>Customize Dashboard</SheetTitle>
+                    </SheetHeader>
+                    <div className="mt-6 space-y-4">
+                      <p className="text-sm text-muted-foreground">
+                        Toggle modules on or off to customize your dashboard view.
+                      </p>
+                      <div className="space-y-3">
+                        {MODULE_REGISTRY.map((module) => (
+                          <div
+                            key={module.id}
+                            className="flex items-center justify-between p-3 bg-secondary/20 rounded-lg"
+                          >
+                            <div>
+                              <p className="font-medium text-sm">{module.title}</p>
+                              <p className="text-xs text-muted-foreground capitalize">{module.column} column</p>
+                            </div>
+                            <Switch
+                              checked={enabledModules.includes(module.id)}
+                              onCheckedChange={() => toggleModule(module.id)}
+                              disabled={updatePreferencesMutation.isPending}
+                              data-testid={`switch-module-${module.id}`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </SheetContent>
+                </Sheet>
                 <Button
                   variant="outline"
                   size="icon"
@@ -413,57 +581,47 @@ export default function Dashboard() {
               </div>
             </header>
 
-            {/* Main Grid */}
+            {/* Main Grid - Dynamic based on enabled modules */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               
-              {/* Left Column: Status & Feed */}
-              <div className="lg:col-span-2 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <PrinterStatus 
-                    status={mapStatus(status?.state || "idle")} 
-                    progress={status?.progress || 0} 
-                    timeLeft={formatTimeRemaining(status?.timeRemaining || null)} 
-                    filename={status?.currentFile || "No active job"} 
-                  />
-                  <WebcamFeed />
+              {/* Left Column */}
+              {leftModules.length > 0 && (
+                <div className="lg:col-span-2 space-y-6">
+                  {leftModules.some((m) => m.id === "status" || m.id === "webcam") && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {renderModule("status")}
+                      {renderModule("webcam")}
+                    </div>
+                  )}
+                  {renderModule("temperature")}
                 </div>
-                
-                <TemperatureChart 
-                  nozzleTemp={status?.temperature.nozzle || 0}
-                  bedTemp={status?.temperature.bed || 0}
-                  targetNozzle={status?.temperature.targetNozzle || 0}
-                  targetBed={status?.temperature.targetBed || 0}
-                />
-              </div>
+              )}
 
-              {/* Right Column: Controls & Files */}
-              <div className="space-y-6">
-                <JogControls printerId={activePrinter.id} />
-                
-                <Card className="p-4 bg-secondary/20 border-border">
-                  <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">Active Job Controls</h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Button
-                      variant="outline"
-                      className="w-full border-yellow-500/50 hover:bg-yellow-500/10 hover:text-yellow-500 text-yellow-500"
-                      data-testid="button-pause"
-                    >
-                      <PauseCircle className="h-4 w-4 mr-2" /> Pause
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full border-red-500/50 hover:bg-red-500/10 hover:text-red-500 text-red-500"
-                      data-testid="button-cancel"
-                    >
-                      <StopCircle className="h-4 w-4 mr-2" /> Cancel
-                    </Button>
-                  </div>
-                </Card>
-
-                <FileList printerId={activePrinter.id} />
-              </div>
+              {/* Right Column */}
+              {rightModules.length > 0 && (
+                <div className="space-y-6">
+                  {renderModule("jogControls")}
+                  {renderModule("jobControls")}
+                  {renderModule("fileList")}
+                </div>
+              )}
 
             </div>
+
+            {/* Empty state if all modules are disabled */}
+            {leftModules.length === 0 && rightModules.length === 0 && (
+              <Card className="p-8 bg-secondary/20 border-border text-center">
+                <LayoutGrid className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No modules enabled</h3>
+                <p className="text-muted-foreground mb-4">
+                  Click the customize button in the header to enable dashboard modules.
+                </p>
+                <Button onClick={() => setCustomizeOpen(true)} data-testid="button-open-customize">
+                  <LayoutGrid className="h-4 w-4 mr-2" />
+                  Customize Dashboard
+                </Button>
+              </Card>
+            )}
           </>
         )}
       </div>

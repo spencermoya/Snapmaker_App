@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -21,6 +21,12 @@ export const printJobs = pgTable("print_jobs", {
   completedAt: timestamp("completed_at"),
 });
 
+export const dashboardPreferences = pgTable("dashboard_preferences", {
+  id: serial("id").primaryKey(),
+  printerId: integer("printer_id").references(() => printers.id).unique().notNull(),
+  enabledModules: jsonb("enabled_modules").$type<string[]>().notNull(),
+});
+
 export const insertPrinterSchema = createInsertSchema(printers).omit({
   id: true,
   lastSeen: true,
@@ -32,10 +38,25 @@ export const insertPrintJobSchema = createInsertSchema(printJobs).omit({
   completedAt: true,
 });
 
+export const dashboardPreferencesSchema = z.object({
+  printerId: z.number(),
+  enabledModules: z.array(z.string()),
+});
+
+export const DEFAULT_ENABLED_MODULES = [
+  "status",
+  "webcam", 
+  "temperature",
+  "jogControls",
+  "jobControls",
+  "fileList",
+];
+
 export type Printer = typeof printers.$inferSelect;
 export type InsertPrinter = z.infer<typeof insertPrinterSchema>;
 export type PrintJob = typeof printJobs.$inferSelect;
 export type InsertPrintJob = z.infer<typeof insertPrintJobSchema>;
+export type DashboardPreferences = typeof dashboardPreferences.$inferSelect;
 
 export type PrinterStatus = {
   state: string;

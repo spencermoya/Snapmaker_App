@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertPrinterSchema, type PrinterStatus } from "@shared/schema";
+import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } from "@shared/schema";
 import { z } from "zod";
 
 const SNAPMAKER_PORT = 8080;
@@ -449,6 +449,50 @@ export async function registerRoutes(
     } catch (error) {
       res.status(500).json({
         error: error instanceof Error ? error.message : "Failed to start print",
+      });
+    }
+  });
+
+  app.get("/api/printers/:id/dashboard-preferences", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const printer = await storage.getPrinter(printerId);
+      
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+
+      const enabledModules = await storage.getDashboardPreferences(printerId);
+      res.json({ enabledModules });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to fetch preferences",
+      });
+    }
+  });
+
+  app.put("/api/printers/:id/dashboard-preferences", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const printer = await storage.getPrinter(printerId);
+      
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+
+      const validationResult = dashboardPreferencesSchema.pick({ enabledModules: true }).safeParse(req.body);
+      
+      if (!validationResult.success) {
+        return res.status(400).json({ error: "enabledModules must be an array of strings" });
+      }
+
+      const { enabledModules } = validationResult.data;
+
+      await storage.setDashboardPreferences(printerId, enabledModules);
+      res.json({ message: "Preferences saved", enabledModules });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to save preferences",
       });
     }
   });
