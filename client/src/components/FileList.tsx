@@ -23,6 +23,9 @@ export default function FileList({ printerId }: FileListProps) {
     queryKey: [`/api/printers/${printerId}/files`],
     enabled: !!printerId,
     refetchInterval: 30000,
+    retry: 2,
+    retryDelay: 1000,
+    staleTime: 5000,
   });
 
   const printMutation = useMutation({

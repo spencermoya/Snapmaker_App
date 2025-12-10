@@ -333,13 +333,15 @@ export async function registerRoutes(
       }
 
       const gcode = `G91\nG0 ${axis.toUpperCase()}${distance} F3000\nG90`;
-      await snapmakerRequest(
+      console.log(`Sending jog command: ${gcode.replace(/\n/g, '\\n')}`);
+      const result = await snapmakerRequest(
         printer.ipAddress,
         "/api/v1/execute_code",
         "POST",
         `token=${encodeURIComponent(printer.token)}&code=${encodeURIComponent(gcode)}`,
         printer.token
       );
+      console.log(`Jog response:`, result);
 
       res.json({ message: "Jog command sent" });
     } catch (error) {
