@@ -232,5 +232,145 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/printers/:id/jog", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const printer = await storage.getPrinter(printerId);
+      
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+
+      if (!printer.token) {
+        return res.status(400).json({ error: "Printer not connected" });
+      }
+
+      const { axis, distance } = req.body;
+      
+      if (!axis || distance === undefined) {
+        return res.status(400).json({ error: "Axis and distance are required" });
+      }
+
+      const gcode = `G91\nG0 ${axis.toUpperCase()}${distance} F3000\nG90`;
+      await snapmakerRequest(
+        printer.ipAddress,
+        "/api/v1/execute_gcode",
+        "POST",
+        `token=${encodeURIComponent(printer.token)}&gcode=${encodeURIComponent(gcode)}`,
+        printer.token
+      );
+
+      res.json({ message: "Jog command sent" });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to send jog command",
+      });
+    }
+  });
+
+  app.post("/api/printers/:id/home", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const printer = await storage.getPrinter(printerId);
+      
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+
+      if (!printer.token) {
+        return res.status(400).json({ error: "Printer not connected" });
+      }
+
+      const { axes } = req.body;
+      const homeAxes = axes || "XYZ";
+
+      const gcode = `G28 ${homeAxes}`;
+      await snapmakerRequest(
+        printer.ipAddress,
+        "/api/v1/execute_gcode",
+        "POST",
+        `token=${encodeURIComponent(printer.token)}&gcode=${encodeURIComponent(gcode)}`,
+        printer.token
+      );
+
+      res.json({ message: "Home command sent" });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to send home command",
+      });
+    }
+  });
+
+  app.get("/api/printers/:id/files", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const printer = await storage.getPrinter(printerId);
+      
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+
+      if (!printer.token) {
+        return res.status(400).json({ error: "Printer not connected" });
+      }
+
+      const result = await snapmakerRequest(
+        printer.ipAddress,
+        `/api/v1/files?token=${printer.token}`,
+        "GET",
+        undefined,
+        printer.token
+      );
+
+      const files = (result.files || []).map((file: any, index: number) => ({
+        id: index + 1,
+        name: file.name || file.filename || "Unknown",
+        size: file.size ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "Unknown",
+        date: file.date || file.modified || "Unknown",
+      }));
+
+      res.json(files);
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to fetch files",
+      });
+    }
+  });
+
+  app.post("/api/printers/:id/print", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const printer = await storage.getPrinter(printerId);
+      
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+
+      if (!printer.token) {
+        return res.status(400).json({ error: "Printer not connected" });
+      }
+
+      const { filename } = req.body;
+      
+      if (!filename) {
+        return res.status(400).json({ error: "Filename is required" });
+      }
+
+      await snapmakerRequest(
+        printer.ipAddress,
+        "/api/v1/start_print",
+        "POST",
+        `token=${printer.token}&filename=${encodeURIComponent(filename)}`,
+        printer.token
+      );
+
+      res.json({ message: "Print started" });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to start print",
+      });
+    }
+  });
+
   return httpServer;
 }
