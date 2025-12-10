@@ -63,6 +63,7 @@ shared/           # Shared code between frontend/backend
 - Token-based authentication for printer connections
 - Auto-reconnect feature: When disconnected, monitors if printer comes online and attempts automatic reconnection using saved token
 - File list feature: Displays files stored on printer with print button functionality
+- Customizable dashboard: Users can toggle modules (status, webcam, temperature, jog controls, job controls, file list) on/off via the customize panel
 
 ### UI Libraries
 - **Radix UI**: Headless component primitives for accessibility
