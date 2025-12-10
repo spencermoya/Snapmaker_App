@@ -245,7 +245,8 @@ export default function Dashboard() {
     return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
   };
 
-  const mapStatus = (state: string): "idle" | "printing" | "paused" | "error" => {
+  const mapStatus = (state: unknown): "idle" | "printing" | "paused" | "error" => {
+    if (!state || typeof state !== "string") return "idle";
     const normalized = state.toLowerCase();
     if (normalized.includes("print") || normalized.includes("working")) return "printing";
     if (normalized.includes("pause")) return "paused";
