@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import multer from "multer";
 import { storage } from "./storage";
 import { startWatcher, stopWatcher, getWatcherStatus, initializeWatcher } from "./fileWatcher";
-import { startLubanProxy, stopLubanProxy, getLubanProxyStatus, initializeLubanProxy } from "./lubanProxy";
+import { startLubanProxy, stopLubanProxy, getLubanProxyStatus } from "./lubanProxy";
 import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } from "@shared/schema";
 import { z } from "zod";
 
@@ -867,14 +867,13 @@ export async function registerRoutes(
     }
   });
 
-  // Initialize file watcher and Luban proxy on startup
+  // Initialize file watcher on startup
   initializeWatcher().catch((err) => {
     console.error("Failed to initialize file watcher:", err);
   });
 
-  initializeLubanProxy().catch((err) => {
-    console.error("Failed to initialize Luban proxy:", err);
-  });
+  // Note: Luban proxy is NOT auto-started to avoid port conflicts
+  // Users can enable it manually via Settings when needed
 
   return httpServer;
 }
