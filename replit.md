@@ -155,5 +155,51 @@ cd ~/Snapmaker_App
 git pull origin main
 npm install
 npm run build
-# Restart the app
+# Restart the app (or restart the service if using auto-start)
+sudo systemctl restart snapmaker
 ```
+
+### Auto-Start on Boot
+To make the app start automatically when your Pi boots (useful for power loss recovery):
+
+```bash
+cd ~/Snapmaker_App
+
+# Make scripts executable
+chmod +x scripts/install-service.sh
+chmod +x scripts/uninstall-service.sh
+
+# Install the service
+./scripts/install-service.sh
+```
+
+**Useful service commands:**
+```bash
+# Check if app is running
+sudo systemctl status snapmaker
+
+# View live logs
+sudo journalctl -u snapmaker -f
+
+# Restart the app
+sudo systemctl restart snapmaker
+
+# Stop the app
+sudo systemctl stop snapmaker
+
+# Disable auto-start
+sudo systemctl disable snapmaker
+```
+
+### Scheduled Nightly Reboot
+To reboot your Pi every night at midnight for a fresh start:
+
+```bash
+# Edit crontab
+sudo crontab -e
+
+# Add this line at the bottom:
+0 0 * * * /sbin/reboot
+```
+
+This reboots the Pi at midnight, and the app will auto-start thanks to the systemd service.

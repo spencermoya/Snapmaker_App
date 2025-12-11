@@ -1,0 +1,16 @@
+[Unit]
+Description=Snapmaker Control Dashboard
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/Snapmaker_App
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=DATABASE_URL=postgresql://snapmaker:password123@localhost:5432/snapmaker
+
+[Install]
+WantedBy=multi-user.target
