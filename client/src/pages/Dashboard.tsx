@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, memo } from "react";
 import PrinterStatus from "@/components/PrinterStatus";
 import TemperatureChart from "@/components/TemperatureChart";
 import JogControls from "@/components/JogControls";
@@ -33,13 +33,89 @@ const MODULE_REGISTRY: ModuleConfig[] = [
   { id: "fileList", title: "File List", column: "right" },
 ];
 
+const AddPrinterForm = memo(function AddPrinterForm({
+  onAdd,
+  onCancel,
+  isPending,
+  showCancel,
+}: {
+  onAdd: (name: string, ip: string) => void;
+  onCancel?: () => void;
+  isPending: boolean;
+  showCancel: boolean;
+}) {
+  const [name, setName] = useState("");
+  const [ip, setIp] = useState("");
+
+  const handleSubmit = () => {
+    if (!name.trim() || !ip.trim()) {
+      toast.error("Please fill in all fields");
+      return;
+    }
+    onAdd(name, ip);
+    setName("");
+    setIp("");
+  };
+
+  return (
+    <div className="mb-6 p-4 bg-secondary/30 rounded-lg">
+      <h3 className="text-sm font-medium mb-3">Add New Printer</h3>
+      <div className="grid gap-3 md:grid-cols-3">
+        <div>
+          <Label htmlFor="printer-name" className="text-xs">Printer Name</Label>
+          <Input
+            id="printer-name"
+            placeholder="e.g., Snapmaker F350"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="mt-1"
+            data-testid="input-printer-name"
+          />
+        </div>
+        <div>
+          <Label htmlFor="printer-ip" className="text-xs">IP Address</Label>
+          <Input
+            id="printer-ip"
+            placeholder="e.g., 192.168.1.42"
+            value={ip}
+            onChange={(e) => setIp(e.target.value)}
+            className="mt-1"
+            data-testid="input-printer-ip"
+          />
+        </div>
+        <div className="flex items-end gap-2">
+          <Button
+            onClick={handleSubmit}
+            disabled={isPending}
+            className="flex-1"
+            data-testid="button-add-printer"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add
+          </Button>
+          {showCancel && onCancel && (
+            <Button
+              variant="outline"
+              onClick={onCancel}
+              data-testid="button-cancel-add"
+            >
+              Cancel
+            </Button>
+          )}
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground mt-2">
+        Find your printer's IP on the touchscreen: Settings → Network → Wi-Fi
+      </p>
+    </div>
+  );
+});
+
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const [autoReconnecting, setAutoReconnecting] = useState(false);
   const [lastReconnectAttempt, setLastReconnectAttempt] = useState<number>(0);
-  const [newPrinterName, setNewPrinterName] = useState("");
-  const [newPrinterIp, setNewPrinterIp] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -47,7 +123,7 @@ export default function Dashboard() {
 
   const { data: printers = [], isLoading: printersLoading } = useQuery<Printer[]>({
     queryKey: ["/api/printers"],
-    refetchInterval: showAddForm ? false : 5000,
+    refetchInterval: 5000,
   });
 
   const activePrinter = printers.find((p) => p.isConnected);
@@ -119,8 +195,6 @@ export default function Dashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/printers"] });
-      setNewPrinterName("");
-      setNewPrinterIp("");
       setShowAddForm(false);
       toast.success("Printer added successfully");
     },
@@ -304,16 +378,16 @@ export default function Dashboard() {
     refetchInterval: 3000,
   });
 
-  const handleAddPrinter = () => {
-    if (!newPrinterName.trim() || !newPrinterIp.trim()) {
-      toast.error("Please fill in all fields");
-      return;
-    }
+  const handleAddPrinter = useCallback((name: string, ip: string) => {
     addPrinterMutation.mutate({
-      name: newPrinterName,
-      ipAddress: newPrinterIp,
+      name,
+      ipAddress: ip,
     });
-  };
+  }, [addPrinterMutation]);
+
+  const handleCancelAddForm = useCallback(() => {
+    setShowAddForm(false);
+  }, []);
 
   if (printersLoading) {
     return (
@@ -450,56 +524,12 @@ export default function Dashboard() {
 
             {/* Add Printer Form */}
             {(printers.length === 0 || showAddForm) && (
-              <div className="mb-6 p-4 bg-secondary/30 rounded-lg">
-                <h3 className="text-sm font-medium mb-3">Add New Printer</h3>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div>
-                    <Label htmlFor="printer-name" className="text-xs">Printer Name</Label>
-                    <Input
-                      id="printer-name"
-                      placeholder="e.g., Snapmaker F350"
-                      value={newPrinterName}
-                      onChange={(e) => setNewPrinterName(e.target.value)}
-                      className="mt-1"
-                      data-testid="input-printer-name"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="printer-ip" className="text-xs">IP Address</Label>
-                    <Input
-                      id="printer-ip"
-                      placeholder="e.g., 192.168.1.42"
-                      value={newPrinterIp}
-                      onChange={(e) => setNewPrinterIp(e.target.value)}
-                      className="mt-1"
-                      data-testid="input-printer-ip"
-                    />
-                  </div>
-                  <div className="flex items-end gap-2">
-                    <Button
-                      onClick={handleAddPrinter}
-                      disabled={addPrinterMutation.isPending}
-                      className="flex-1"
-                      data-testid="button-add-printer"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add
-                    </Button>
-                    {showAddForm && (
-                      <Button
-                        variant="outline"
-                        onClick={() => setShowAddForm(false)}
-                        data-testid="button-cancel-add"
-                      >
-                        Cancel
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Find your printer's IP on the touchscreen: Settings → Network → Wi-Fi
-                </p>
-              </div>
+              <AddPrinterForm
+                onAdd={handleAddPrinter}
+                onCancel={handleCancelAddForm}
+                isPending={addPrinterMutation.isPending}
+                showCancel={showAddForm}
+              />
             )}
 
             {/* Printer List */}
