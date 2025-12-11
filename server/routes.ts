@@ -72,6 +72,7 @@ export async function registerRoutes(
       const printers = await storage.getAllPrinters();
       res.json(printers);
     } catch (error) {
+      console.error("[api/printers] Database error:", error);
       res.status(500).json({ error: "Failed to fetch printers" });
     }
   });
@@ -85,6 +86,7 @@ export async function registerRoutes(
       if (error instanceof z.ZodError) {
         res.status(400).json({ error: error.errors });
       } else {
+        console.error("[api/printers POST] Database error:", error);
         res.status(500).json({ error: "Failed to create printer" });
       }
     }
