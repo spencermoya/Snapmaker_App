@@ -2,6 +2,7 @@ import { watch, FSWatcher } from "fs";
 import { readdir, readFile, stat } from "fs/promises";
 import { join, extname } from "path";
 import { storage } from "./storage";
+import { extractThumbnail } from "./thumbnailExtractor";
 
 let watcher: FSWatcher | null = null;
 let watchPath: string | null = null;
@@ -42,17 +43,19 @@ async function processNewFile(filePath: string, filename: string) {
 
     const fileContent = await readFile(filePath, "utf-8");
     const displayName = filename.replace(/\.[^/.]+$/, "");
+    const thumbnail = extractThumbnail(fileContent);
 
     await storage.addUploadedFile({
       printerId: printer.id,
       filename,
       displayName,
       fileContent,
+      thumbnail,
       source: "watch-folder",
     });
 
     processedFiles.add(filePath);
-    console.log(`[FileWatcher] Added file from watch folder: ${filename}`);
+    console.log(`[FileWatcher] Added file from watch folder: ${filename}${thumbnail ? ' (with thumbnail)' : ''}`);
   } catch (error) {
     console.error(`[FileWatcher] Error processing file ${filename}:`, error);
   }

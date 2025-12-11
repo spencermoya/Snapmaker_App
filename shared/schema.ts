@@ -33,6 +33,7 @@ export const uploadedFiles = pgTable("uploaded_files", {
   filename: text("filename").notNull(),
   displayName: text("display_name"),
   fileContent: text("file_content"),
+  thumbnail: text("thumbnail"),
   uploadedAt: timestamp("uploaded_at").defaultNow(),
   source: text("source").notNull(),
 });

@@ -33,6 +33,7 @@ interface UploadedFile {
   filename: string;
   displayName: string | null;
   fileContent: string | null;
+  thumbnail: string | null;
   source: string;
   uploadedAt: string;
 }
@@ -405,7 +406,7 @@ export default function FileList({ printerId }: FileListProps) {
 
       {/* File Preview Dialog */}
       <Dialog open={previewDialogOpen} onOpenChange={setPreviewDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileCode className="h-5 w-5 text-primary" />
@@ -414,7 +415,24 @@ export default function FileList({ printerId }: FileListProps) {
           </DialogHeader>
           
           {previewFile && (
-            <div className="space-y-4 py-4">
+            <div className="space-y-4">
+              {/* Thumbnail Image */}
+              {previewFile.thumbnail ? (
+                <div className="flex justify-center bg-secondary/30 rounded-lg p-4">
+                  <img 
+                    src={previewFile.thumbnail} 
+                    alt={`Preview of ${previewFile.displayName || previewFile.filename}`}
+                    className="max-w-full max-h-64 object-contain rounded"
+                    data-testid="preview-thumbnail"
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center bg-secondary/30 rounded-lg p-8 text-muted-foreground">
+                  <FileCode className="h-16 w-16 mb-2 opacity-50" />
+                  <span className="text-sm">No preview available</span>
+                </div>
+              )}
+
               {/* File Info */}
               <div className="space-y-3">
                 <div>

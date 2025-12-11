@@ -4,6 +4,7 @@ import multer from "multer";
 import { storage } from "./storage";
 import { startWatcher, stopWatcher, getWatcherStatus, initializeWatcher } from "./fileWatcher";
 import { startLubanProxy, stopLubanProxy, getLubanProxyStatus, initializeLubanProxy } from "./lubanProxy";
+import { extractThumbnail } from "./thumbnailExtractor";
 import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } from "@shared/schema";
 import { z } from "zod";
 
@@ -595,11 +596,15 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Filename is required" });
       }
 
+      // Extract thumbnail from G-code if available
+      const thumbnail = fileContent ? extractThumbnail(fileContent) : null;
+
       const file = await storage.addUploadedFile({
         printerId,
         filename,
         displayName: displayName || null,
         fileContent: fileContent || null,
+        thumbnail,
         source: source || "manual",
       });
 
@@ -654,12 +659,14 @@ export async function registerRoutes(
 
       const fileContent = file.buffer.toString("utf-8");
       const displayName = file.originalname.replace(/\.[^/.]+$/, "");
+      const thumbnail = extractThumbnail(fileContent);
 
       const uploadedFile = await storage.addUploadedFile({
         printerId: printer.id,
         filename: file.originalname,
         displayName,
         fileContent,
+        thumbnail,
         source: "slicer",
       });
 
@@ -707,12 +714,14 @@ export async function registerRoutes(
 
       const fileContent = file.buffer.toString("utf-8");
       const displayName = (req.body.displayName as string) || file.originalname.replace(/\.[^/.]+$/, "");
+      const thumbnail = extractThumbnail(fileContent);
 
       const uploadedFile = await storage.addUploadedFile({
         printerId: printer.id,
         filename: file.originalname,
         displayName,
         fileContent,
+        thumbnail,
         source: "slicer",
       });
 

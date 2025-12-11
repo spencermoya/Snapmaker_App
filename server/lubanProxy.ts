@@ -1,6 +1,7 @@
 import http from "http";
 import { storage } from "./storage";
 import { log } from "./index";
+import { extractThumbnail } from "./thumbnailExtractor";
 
 const PROXY_PORT = 8080;
 
@@ -176,14 +177,16 @@ async function handleProxyRequest(
               );
               
               if (!alreadyExists) {
+                const thumbnail = extractThumbnail(fileContent);
                 await storage.addUploadedFile({
                   printerId: printer.id,
                   filename: parsed.filename,
                   displayName,
                   fileContent,
+                  thumbnail,
                   source: "luban",
                 });
-                log(`[Luban Proxy] Saved file to database: ${parsed.filename}`, "proxy");
+                log(`[Luban Proxy] Saved file to database: ${parsed.filename}${thumbnail ? ' (with thumbnail)' : ''}`, "proxy");
               } else {
                 log(`[Luban Proxy] File already exists, skipping: ${parsed.filename}`, "proxy");
               }
