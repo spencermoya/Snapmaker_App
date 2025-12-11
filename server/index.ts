@@ -1,13 +1,11 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
-import { createServer as createHttpServer } from "http";
-import { createServer as createHttpsServer } from "https";
+import { createServer } from "http";
 import { ensureSchema } from "./ensureSchema";
-import fs from "fs";
-import path from "path";
 
 const app = express();
+const httpServer = createServer(app);
 
 declare module "http" {
   interface IncomingMessage {
@@ -62,25 +60,6 @@ app.use((req, res, next) => {
   next();
 });
 
-function getSSLOptions(): { key: Buffer; cert: Buffer } | null {
-  const certDir = process.env.SSL_CERT_DIR || path.join(process.cwd(), "certs");
-  const keyPath = path.join(certDir, "server.key");
-  const certPath = path.join(certDir, "server.crt");
-
-  if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
-    try {
-      return {
-        key: fs.readFileSync(keyPath),
-        cert: fs.readFileSync(certPath),
-      };
-    } catch (error) {
-      log(`Warning: Could not read SSL certificates: ${error}`, "ssl");
-      return null;
-    }
-  }
-  return null;
-}
-
 (async () => {
   try {
     await ensureSchema();
@@ -88,15 +67,7 @@ function getSSLOptions(): { key: Buffer; cert: Buffer } | null {
     log(`Failed to ensure database schema: ${error}`, "db");
   }
 
-  const isProduction = process.env.NODE_ENV === "production";
-  const sslOptions = isProduction ? getSSLOptions() : null;
-  const useHttps = sslOptions !== null;
-  
-  const server = useHttps
-    ? createHttpsServer(sslOptions!, app)
-    : createHttpServer(app);
-
-  await registerRoutes(server, app);
+  await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -110,22 +81,18 @@ function getSSLOptions(): { key: Buffer; cert: Buffer } | null {
     serveStatic(app);
   } else {
     const { setupVite } = await import("./vite");
-    await setupVite(server, app);
+    await setupVite(httpServer, app);
   }
 
   const port = parseInt(process.env.PORT || "5000", 10);
-  server.listen(
+  httpServer.listen(
     {
       port,
       host: "0.0.0.0",
       reusePort: true,
     },
     () => {
-      const protocol = useHttps ? "https" : "http";
-      log(`serving on ${protocol}://0.0.0.0:${port}`);
-      if (useHttps) {
-        log("HTTPS enabled with SSL certificates from ./certs/", "ssl");
-      }
+      log(`serving on http://0.0.0.0:${port}`);
     },
   );
 })();
