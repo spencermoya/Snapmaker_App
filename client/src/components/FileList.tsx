@@ -3,10 +3,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { FileCode, Play, RefreshCw, Upload, Trash2, Info, AlertCircle } from "lucide-react";
+import { FileCode, Play, RefreshCw, Upload, Trash2, Info, AlertCircle, X, Calendar, FolderInput } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -42,6 +42,8 @@ export default function FileList({ printerId }: FileListProps) {
   const [displayName, setDisplayName] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [previewFile, setPreviewFile] = useState<UploadedFile | null>(null);
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: files = [], isLoading, error, refetch } = useQuery<UploadedFile[]>({
@@ -126,12 +128,55 @@ export default function FileList({ printerId }: FileListProps) {
     },
     onSuccess: () => {
       toast.success("Print started! Check your printer.");
+      setPreviewDialogOpen(false);
+      setPreviewFile(null);
       queryClient.invalidateQueries({ queryKey: [`/api/printers/${printerId}/status`] });
     },
     onError: (error: Error) => {
       toast.error(error.message);
     },
   });
+
+  const handleFileClick = useCallback((file: UploadedFile) => {
+    setPreviewFile(file);
+    setPreviewDialogOpen(true);
+  }, []);
+
+  const handleClosePreview = useCallback(() => {
+    setPreviewDialogOpen(false);
+    setPreviewFile(null);
+  }, []);
+
+  const handleStartPrint = useCallback(() => {
+    if (previewFile) {
+      printMutation.mutate(previewFile.id);
+    }
+  }, [previewFile, printMutation]);
+
+  const formatDate = (dateString: string) => {
+    try {
+      return new Date(dateString).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return "Unknown";
+    }
+  };
+
+  const getSourceLabel = (source: string) => {
+    switch (source) {
+      case "upload": return "Manual Upload";
+      case "drag-drop": return "Drag & Drop";
+      case "slicer": return "Slicer";
+      case "watch-folder": return "Watch Folder";
+      case "luban": return "Luban";
+      default: return source;
+    }
+  };
 
   const handleUpload = () => {
     if (selectedFile) {
@@ -290,7 +335,12 @@ export default function FileList({ printerId }: FileListProps) {
             </TableHeader>
             <TableBody>
               {files.map((file) => (
-                <TableRow key={file.id} className="group border-border hover:bg-secondary/30" data-testid={`row-file-${file.id}`}>
+                <TableRow 
+                  key={file.id} 
+                  className="group border-border hover:bg-secondary/30 cursor-pointer" 
+                  data-testid={`row-file-${file.id}`}
+                  onClick={() => handleFileClick(file)}
+                >
                   <TableCell className="font-medium text-xs text-foreground">
                     <div className="flex items-center gap-2">
                       <FileCode className="h-4 w-4 text-primary flex-shrink-0" />
@@ -313,7 +363,7 @@ export default function FileList({ printerId }: FileListProps) {
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
+                    <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -352,6 +402,75 @@ export default function FileList({ printerId }: FileListProps) {
           </Table>
         )}
       </CardContent>
+
+      {/* File Preview Dialog */}
+      <Dialog open={previewDialogOpen} onOpenChange={setPreviewDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileCode className="h-5 w-5 text-primary" />
+              File Details
+            </DialogTitle>
+          </DialogHeader>
+          
+          {previewFile && (
+            <div className="space-y-4 py-4">
+              {/* File Info */}
+              <div className="space-y-3">
+                <div>
+                  <h3 className="text-lg font-semibold" data-testid="preview-display-name">
+                    {previewFile.displayName || previewFile.filename}
+                  </h3>
+                  {previewFile.displayName && (
+                    <p className="text-sm text-muted-foreground font-mono" data-testid="preview-filename">
+                      {previewFile.filename}
+                    </p>
+                  )}
+                </div>
+                
+                <div className="flex flex-col gap-2 text-sm">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Calendar className="h-4 w-4" />
+                    <span data-testid="preview-date">{formatDate(previewFile.uploadedAt)}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <FolderInput className="h-4 w-4" />
+                    <span data-testid="preview-source">{getSourceLabel(previewFile.source)}</span>
+                  </div>
+                </div>
+
+                {!previewFile.fileContent && (
+                  <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-500">
+                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                    <span className="text-sm">No file content stored. Please re-upload this file to enable printing.</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex flex-row justify-between sm:justify-between gap-2">
+            <Button
+              variant="outline"
+              onClick={handleClosePreview}
+              className="flex-1 sm:flex-none"
+              data-testid="button-close-preview"
+            >
+              <X className="h-4 w-4 mr-2" />
+              Close
+            </Button>
+            <Button
+              onClick={handleStartPrint}
+              disabled={printMutation.isPending || !previewFile?.fileContent}
+              className="flex-1 sm:flex-none"
+              data-testid="button-start-print"
+            >
+              <Play className="h-4 w-4 mr-2" />
+              {printMutation.isPending ? "Starting..." : "Start Print"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
