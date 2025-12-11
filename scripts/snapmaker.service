@@ -4,8 +4,8 @@ After=network.target postgresql.service
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/Snapmaker_App
+User=spencermoya
+WorkingDirectory=/home/spencermoya/Snapmaker_App
 ExecStart=/usr/bin/npm run start
 Restart=on-failure
 RestartSec=10
