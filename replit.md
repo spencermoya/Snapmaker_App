@@ -203,3 +203,22 @@ sudo crontab -e
 ```
 
 This reboots the Pi at midnight, and the app will auto-start thanks to the systemd service.
+
+### WiFi Auto-Reconnect
+To ensure your Pi always stays connected to WiFi (auto-reconnects if connection drops):
+
+```bash
+cd ~/Snapmaker_App
+
+# Make script executable
+chmod +x scripts/install-wifi-reconnect.sh
+
+# Install WiFi auto-reconnect
+./scripts/install-wifi-reconnect.sh
+```
+
+This does two things:
+1. Checks WiFi every 5 minutes and reconnects if lost
+2. Disables WiFi power management (prevents random disconnections)
+
+View reconnection logs: `sudo cat /var/log/wifi-reconnect.log`
