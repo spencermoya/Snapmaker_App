@@ -47,7 +47,7 @@ export default function Dashboard() {
 
   const { data: printers = [], isLoading: printersLoading } = useQuery<Printer[]>({
     queryKey: ["/api/printers"],
-    refetchInterval: 5000,
+    refetchInterval: showAddForm ? false : 5000,
   });
 
   const activePrinter = printers.find((p) => p.isConnected);
