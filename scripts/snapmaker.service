@@ -10,7 +10,7 @@ ExecStart=/usr/bin/npm run start
 Restart=on-failure
 RestartSec=10
 Environment=NODE_ENV=production
-Environment=DATABASE_URL=postgresql://snapmaker:password123@127.0.0.1:5432/snapmaker
+Environment=DATABASE_URL=postgresql://snapmaker:Server1@127.0.0.1:5432/snapmaker
 
 [Install]
 WantedBy=multi-user.target
