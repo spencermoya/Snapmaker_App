@@ -126,12 +126,15 @@ export default function Dashboard() {
     refetchInterval: 5000,
   });
 
+  // Use connected printer if available, otherwise use first printer in list
   const activePrinter = printers.find((p) => p.isConnected);
+  const selectedPrinter = activePrinter || printers[0];
+  const isConnected = !!activePrinter;
   const disconnectedPrinter = printers.find((p) => !p.isConnected && p.token);
 
   const { data: preferencesData, isLoading: preferencesLoading } = useQuery<{ enabledModules: string[] }>({
-    queryKey: [`/api/printers/${activePrinter?.id}/dashboard-preferences`],
-    enabled: !!activePrinter,
+    queryKey: [`/api/printers/${selectedPrinter?.id}/dashboard-preferences`],
+    enabled: !!selectedPrinter,
     staleTime: Infinity,
   });
 
@@ -165,14 +168,14 @@ export default function Dashboard() {
   });
 
   const toggleModule = (moduleId: string) => {
-    if (!activePrinter) return;
+    if (!selectedPrinter) return;
     
     const newEnabledModules = enabledModules.includes(moduleId)
       ? enabledModules.filter((id) => id !== moduleId)
       : [...enabledModules, moduleId];
     
     updatePreferencesMutation.mutate({
-      printerId: activePrinter.id,
+      printerId: selectedPrinter.id,
       enabledModules: newEnabledModules,
     });
   };
@@ -416,17 +419,17 @@ export default function Dashboard() {
   };
 
   const renderModule = (moduleId: string) => {
-    if (!activePrinter || !enabledModules.includes(moduleId)) return null;
+    if (!selectedPrinter || !enabledModules.includes(moduleId)) return null;
 
     switch (moduleId) {
       case "status":
         return (
           <PrinterStatus 
             key={moduleId}
-            status={mapStatus(status?.state || "idle")} 
+            status={isConnected ? mapStatus(status?.state || "idle") : "idle"} 
             progress={status?.progress || 0} 
             timeLeft={formatTimeRemaining(status?.timeRemaining || null)} 
-            filename={status?.currentFile || "No active job"} 
+            filename={status?.currentFile || (isConnected ? "No active job" : "Printer offline")} 
           />
         );
       case "webcam":
@@ -435,14 +438,14 @@ export default function Dashboard() {
         return (
           <TemperatureChart 
             key={moduleId}
-            nozzleTemp={status?.temperature.nozzle || 0}
-            bedTemp={status?.temperature.bed || 0}
-            targetNozzle={status?.temperature.targetNozzle || 0}
-            targetBed={status?.temperature.targetBed || 0}
+            nozzleTemp={status?.temperature?.nozzle || 0}
+            bedTemp={status?.temperature?.bed || 0}
+            targetNozzle={status?.temperature?.targetNozzle || 0}
+            targetBed={status?.temperature?.targetBed || 0}
           />
         );
       case "jogControls":
-        return <JogControls key={moduleId} printerId={activePrinter.id} />;
+        return <JogControls key={moduleId} printerId={selectedPrinter.id} disabled={!isConnected} />;
       case "jobControls":
         return (
           <Card key={moduleId} className="p-4 bg-secondary/20 border-border">
@@ -452,6 +455,7 @@ export default function Dashboard() {
                 variant="outline"
                 className="w-full border-yellow-500/50 hover:bg-yellow-500/10 hover:text-yellow-500 text-yellow-500"
                 data-testid="button-pause"
+                disabled={!isConnected}
               >
                 <PauseCircle className="h-4 w-4 mr-2" /> Pause
               </Button>
@@ -459,6 +463,7 @@ export default function Dashboard() {
                 variant="outline"
                 className="w-full border-red-500/50 hover:bg-red-500/10 hover:text-red-500 text-red-500"
                 data-testid="button-cancel"
+                disabled={!isConnected}
               >
                 <StopCircle className="h-4 w-4 mr-2" /> Cancel
               </Button>
@@ -466,7 +471,7 @@ export default function Dashboard() {
           </Card>
         );
       case "fileList":
-        return <FileList key={moduleId} printerId={activePrinter.id} />;
+        return <FileList key={moduleId} printerId={selectedPrinter.id} />;
       default:
         return null;
     }
@@ -497,135 +502,42 @@ export default function Dashboard() {
       )}
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* Printer Connection Section - Always at top */}
-        {!activePrinter && (
+        {/* Printer Connection Section - Show when no printers exist */}
+        {printers.length === 0 && (
           <Card className="p-6 bg-secondary/20 border-border">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="text-xl font-bold">Snapmaker Control</h2>
                 <p className="text-sm text-muted-foreground">
-                  {printers.length === 0 
-                    ? "Add your printer to get started" 
-                    : "Connect to your printer to access controls"}
+                  Add your printer to get started
                 </p>
               </div>
-              {printers.length > 0 && !showAddForm && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowAddForm(true)}
-                  data-testid="button-show-add-form"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Printer
-                </Button>
-              )}
             </div>
 
             {/* Add Printer Form */}
-            {(printers.length === 0 || showAddForm) && (
-              <AddPrinterForm
-                onAdd={handleAddPrinter}
-                onCancel={handleCancelAddForm}
-                isPending={addPrinterMutation.isPending}
-                showCancel={showAddForm}
-              />
-            )}
-
-            {/* Printer List */}
-            {printers.length > 0 && (
-              <div className="space-y-2">
-                {printers.map((printer) => (
-                  <div
-                    key={printer.id}
-                    className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg"
-                    data-testid={`card-printer-${printer.id}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`h-3 w-3 rounded-full ${
-                          printer.isConnected ? "bg-green-500" : "bg-gray-500"
-                        }`}
-                        data-testid={`status-connection-${printer.id}`}
-                      />
-                      <div>
-                        <p className="font-medium" data-testid={`text-printer-name-${printer.id}`}>
-                          {printer.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground" data-testid={`text-printer-ip-${printer.id}`}>
-                          {printer.ipAddress}
-                          {disconnectedPrinter?.id === printer.id && autoReconnecting && (
-                            <span className="ml-2 inline-flex items-center gap-1">
-                              <RefreshCw className="h-3 w-3 animate-spin" />
-                              Reconnecting...
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      {printer.isConnected ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => disconnectMutation.mutate(printer.id)}
-                          disabled={disconnectMutation.isPending}
-                          data-testid={`button-disconnect-${printer.id}`}
-                        >
-                          <WifiOff className="h-4 w-4 mr-2" />
-                          Disconnect
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          onClick={() => connectMutation.mutate(printer.id)}
-                          disabled={connectMutation.isPending}
-                          data-testid={`button-connect-${printer.id}`}
-                        >
-                          <Wifi className="h-4 w-4 mr-2" />
-                          Connect
-                        </Button>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => deletePrinterMutation.mutate(printer.id)}
-                        disabled={deletePrinterMutation.isPending}
-                        data-testid={`button-delete-${printer.id}`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Connection Instructions */}
-            {printers.length > 0 && (
-              <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                <p className="text-xs text-blue-400">
-                  <strong>Connection tip:</strong> Click Connect, then confirm on your printer's touchscreen, then click Connect again to complete.
-                </p>
-              </div>
-            )}
+            <AddPrinterForm
+              onAdd={handleAddPrinter}
+              onCancel={handleCancelAddForm}
+              isPending={addPrinterMutation.isPending}
+              showCancel={false}
+            />
           </Card>
         )}
 
-        {/* Connected Dashboard View */}
-        {activePrinter && (
+        {/* Dashboard View - Show when any printer is configured */}
+        {selectedPrinter && (
           <>
             {/* Header */}
             <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
               <div>
                 <h1 className="text-3xl font-bold tracking-tight text-foreground flex items-center gap-3">
-                  <span data-testid="text-printer-name">{activePrinter.name}</span>
-                  <span className="text-xs font-mono font-normal text-muted-foreground border px-2 py-0.5 rounded-full">
-                    {status?.state || "idle"}
+                  <span data-testid="text-printer-name">{selectedPrinter.name}</span>
+                  <span className={`text-xs font-mono font-normal border px-2 py-0.5 rounded-full ${isConnected ? 'text-muted-foreground' : 'text-amber-500 border-amber-500/50'}`}>
+                    {isConnected ? (status?.state || "idle") : "offline"}
                   </span>
                 </h1>
                 <p className="text-muted-foreground mt-1" data-testid="text-printer-ip">
-                  Connected via Wi-Fi • {activePrinter.ipAddress}
+                  {isConnected ? "Connected via Wi-Fi" : "Not connected"} • {selectedPrinter.ipAddress}
                 </p>
               </div>
               
@@ -687,16 +599,29 @@ export default function Dashboard() {
                     </div>
                   </SheetContent>
                 </Sheet>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={() => disconnectMutation.mutate(activePrinter.id)}
-                  disabled={disconnectMutation.isPending}
-                  data-testid="button-disconnect-header"
-                >
-                  <WifiOff className="h-4 w-4" />
-                </Button>
+                {isConnected ? (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => disconnectMutation.mutate(selectedPrinter.id)}
+                    disabled={disconnectMutation.isPending}
+                    data-testid="button-disconnect-header"
+                  >
+                    <WifiOff className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => connectMutation.mutate(selectedPrinter.id)}
+                    disabled={connectMutation.isPending}
+                    data-testid="button-connect-header"
+                  >
+                    <Wifi className="h-4 w-4" />
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="icon"

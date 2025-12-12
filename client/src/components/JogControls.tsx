@@ -8,10 +8,12 @@ import { toast } from "sonner";
 
 interface JogControlsProps {
   printerId: number | null;
+  disabled?: boolean;
 }
 
-export default function JogControls({ printerId }: JogControlsProps) {
+export default function JogControls({ printerId, disabled = false }: JogControlsProps) {
   const [step, setStep] = useState(10);
+  const isOffline = disabled;
 
   const jogMutation = useMutation({
     mutationFn: async ({ axis, distance }: { axis: string; distance: number }) => {
@@ -63,7 +65,7 @@ export default function JogControls({ printerId }: JogControlsProps) {
   };
 
   const isLoading = jogMutation.isPending || homeMutation.isPending;
-  const isDisabled = !printerId;
+  const isDisabled = !printerId || isOffline;
 
   return (
     <Card className="shadow-lg">
