@@ -1,12 +1,11 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
-import { createServer as createHttpServer } from "http";
-import { createServer as createHttpsServer } from "https";
-import { readFileSync, existsSync } from "fs";
+import { createServer } from "http";
 import { ensureSchema } from "./ensureSchema";
 
 const app = express();
+const httpServer = createServer(app);
 
 declare module "http" {
   interface IncomingMessage {
@@ -61,25 +60,6 @@ app.use((req, res, next) => {
   next();
 });
 
-function getSSLOptions() {
-  const certDir = process.env.SSL_CERT_DIR || "./certs";
-  const keyPath = `${certDir}/server.key`;
-  const certPath = `${certDir}/server.crt`;
-  
-  if (existsSync(keyPath) && existsSync(certPath)) {
-    try {
-      return {
-        key: readFileSync(keyPath),
-        cert: readFileSync(certPath),
-      };
-    } catch (error) {
-      log(`Failed to read SSL certificates: ${error}`, "ssl");
-      return null;
-    }
-  }
-  return null;
-}
-
 (async () => {
   try {
     await ensureSchema();
@@ -87,14 +67,7 @@ function getSSLOptions() {
     log(`Failed to ensure database schema: ${error}`, "db");
   }
 
-  const sslOptions = getSSLOptions();
-  const useHttps = sslOptions && process.env.NODE_ENV === "production";
-  
-  const server = useHttps 
-    ? createHttpsServer(sslOptions, app)
-    : createHttpServer(app);
-
-  await registerRoutes(server, app);
+  await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -108,22 +81,18 @@ function getSSLOptions() {
     serveStatic(app);
   } else {
     const { setupVite } = await import("./vite");
-    await setupVite(server, app);
+    await setupVite(httpServer, app);
   }
 
   const port = parseInt(process.env.PORT || "5000", 10);
-  server.listen(
+  httpServer.listen(
     {
       port,
       host: "0.0.0.0",
       reusePort: true,
     },
     () => {
-      const protocol = useHttps ? "https" : "http";
-      log(`serving on ${protocol}://0.0.0.0:${port}`);
-      if (useHttps) {
-        log(`HTTPS enabled with SSL certificates`);
-      }
+      log(`serving on http://0.0.0.0:${port}`);
     },
   );
 })();
