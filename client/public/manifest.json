@@ -1,0 +1,24 @@
+{
+  "name": "Snapmaker Control",
+  "short_name": "Snapmaker",
+  "description": "Monitor and control your Snapmaker 2.0 F350 3D printer",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0a0a0a",
+  "background_color": "#0a0a0a",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
