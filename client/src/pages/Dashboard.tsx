@@ -120,6 +120,8 @@ export default function Dashboard() {
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragCounter, setDragCounter] = useState(0);
+  const [lightOn, setLightOn] = useState(false);
+  const [fanOn, setFanOn] = useState(false);
 
   const { data: printers = [], isLoading: printersLoading } = useQuery<Printer[]>({
     queryKey: ["/api/printers"],
@@ -298,6 +300,70 @@ export default function Dashboard() {
     onSuccess: (_, variables) => {
       toast.success("File uploaded successfully!");
       queryClient.invalidateQueries({ queryKey: [`/api/printers/${variables.printerId}/uploaded-files`] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const emergencyStopMutation = useMutation({
+    mutationFn: async (printerId: number) => {
+      const res = await fetch(`/api/printers/${printerId}/emergency-stop`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to send emergency stop");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success("Emergency stop sent!");
+      queryClient.invalidateQueries({ queryKey: ["/api/printers"] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const lightMutation = useMutation({
+    mutationFn: async ({ printerId, enabled }: { printerId: number; enabled: boolean }) => {
+      const res = await fetch(`/api/printers/${printerId}/light`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to control light");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setLightOn(data.enabled);
+      toast.success(data.message);
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const fanMutation = useMutation({
+    mutationFn: async ({ printerId, enabled }: { printerId: number; enabled: boolean }) => {
+      const res = await fetch(`/api/printers/${printerId}/fan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to control fan");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setFanOn(data.enabled);
+      toast.success(data.message);
     },
     onError: (error: Error) => {
       toast.error(error.message);
@@ -567,7 +633,9 @@ export default function Dashboard() {
                 <Button
                   variant="outline"
                   size="icon"
-                  className="text-muted-foreground hover:text-foreground"
+                  className={`${lightOn ? 'text-yellow-500 border-yellow-500/50' : 'text-muted-foreground'} hover:text-foreground`}
+                  onClick={() => selectedPrinter && lightMutation.mutate({ printerId: selectedPrinter.id, enabled: !lightOn })}
+                  disabled={!isConnected || lightMutation.isPending}
                   data-testid="button-light"
                 >
                   <Lightbulb className="h-4 w-4" />
@@ -575,10 +643,12 @@ export default function Dashboard() {
                 <Button
                   variant="outline"
                   size="icon"
-                  className="text-muted-foreground hover:text-foreground"
+                  className={`${fanOn ? 'text-blue-500 border-blue-500/50' : 'text-muted-foreground'} hover:text-foreground`}
+                  onClick={() => selectedPrinter && fanMutation.mutate({ printerId: selectedPrinter.id, enabled: !fanOn })}
+                  disabled={!isConnected || fanMutation.isPending}
                   data-testid="button-fan"
                 >
-                  <Fan className="h-4 w-4" />
+                  <Fan className={`h-4 w-4 ${fanOn ? 'animate-spin' : ''}`} />
                 </Button>
                 <Sheet open={customizeOpen} onOpenChange={setCustomizeOpen}>
                   <SheetTrigger asChild>
@@ -648,6 +718,8 @@ export default function Dashboard() {
                 <Button
                   variant="destructive"
                   className="shadow-[0_0_20px_rgba(239,68,68,0.3)]"
+                  onClick={() => selectedPrinter && emergencyStopMutation.mutate(selectedPrinter.id)}
+                  disabled={!isConnected || emergencyStopMutation.isPending}
                   data-testid="button-estop"
                 >
                   <Power className="h-4 w-4 mr-2" /> E-STOP
