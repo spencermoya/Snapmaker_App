@@ -3,10 +3,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { FileCode, Play, RefreshCw, Upload, Trash2, Info, AlertCircle, X, Calendar, FolderInput } from "lucide-react";
+import { FileCode, Play, RefreshCw, Upload, Trash2, Info, AlertCircle, X, Calendar, FolderInput, Clock } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -167,6 +167,54 @@ export default function FileList({ printerId }: FileListProps) {
       return "Unknown";
     }
   };
+
+  const parseEstimatedTime = (gcode: string | null): number | null => {
+    if (!gcode) return null;
+    
+    const lines = gcode.slice(0, 8000).split('\n');
+    
+    for (const line of lines) {
+      let match = line.match(/;TIME:(\d+)/i);
+      if (match) return parseInt(match[1], 10);
+      
+      match = line.match(/;estimated_time\(s\):\s*(\d+)/i);
+      if (match) return parseInt(match[1], 10);
+      
+      match = line.match(/;\s*estimated_print_time\s*=\s*(\d+)/i);
+      if (match) return parseInt(match[1], 10);
+      
+      match = line.match(/;\s*estimated printing time[^=]*[=:]\s*((\d+)h\s*)?((\d+)m\s*)?((\d+)s)?/i);
+      if (match) {
+        const hours = parseInt(match[2] || '0', 10);
+        const minutes = parseInt(match[4] || '0', 10);
+        const seconds = parseInt(match[6] || '0', 10);
+        if (hours > 0 || minutes > 0 || seconds > 0) {
+          return hours * 3600 + minutes * 60 + seconds;
+        }
+      }
+      
+      match = line.match(/;PRINT_TIME:\s*(\d+)/i);
+      if (match) return parseInt(match[1], 10);
+      
+      match = line.match(/;\s*print_time\s*=\s*(\d+)/i);
+      if (match) return parseInt(match[1], 10);
+    }
+    return null;
+  };
+
+  const formatPrintTime = (seconds: number | null): string => {
+    if (!seconds || seconds <= 0) return "Unknown";
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    return `${minutes}m`;
+  };
+
+  const estimatedTime = useMemo(() => {
+    return parseEstimatedTime(previewFile?.fileContent || null);
+  }, [previewFile?.fileContent]);
 
   const getSourceLabel = (source: string) => {
     switch (source) {
@@ -447,6 +495,13 @@ export default function FileList({ printerId }: FileListProps) {
                 </div>
                 
                 <div className="flex flex-col gap-2 text-sm">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Clock className="h-4 w-4" />
+                    <span>Est. Print Time: </span>
+                    <span className="text-foreground font-medium" data-testid="preview-print-time">
+                      {formatPrintTime(estimatedTime)}
+                    </span>
+                  </div>
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Calendar className="h-4 w-4" />
                     <span data-testid="preview-date">{formatDate(previewFile.uploadedAt)}</span>
