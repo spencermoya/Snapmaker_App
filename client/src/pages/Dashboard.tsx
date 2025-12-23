@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { useEffect, useState, useCallback, memo } from "react";
+import { useEffect, useState, useCallback, memo, useRef } from "react";
 import PrinterStatus from "@/components/PrinterStatus";
 import TemperatureChart from "@/components/TemperatureChart";
 import JogControls from "@/components/JogControls";
@@ -324,14 +324,16 @@ export default function Dashboard() {
   });
 
   // Light control mutation - initialize from printer data
-  const [lightOn, setLightOn] = useState(selectedPrinter?.lightOn ?? false);
+  const [lightOn, setLightOn] = useState(false);
+  const lightInitialized = useRef(false);
   
-  // Sync light state when printer data changes
+  // Sync light state only on initial printer load
   useEffect(() => {
-    if (selectedPrinter) {
+    if (selectedPrinter && !lightInitialized.current) {
       setLightOn(selectedPrinter.lightOn ?? false);
+      lightInitialized.current = true;
     }
-  }, [selectedPrinter?.id, selectedPrinter?.lightOn]);
+  }, [selectedPrinter?.id]);
 
   const lightMutation = useMutation({
     mutationFn: async ({ printerId, power }: { printerId: number; power: number }) => {
@@ -358,14 +360,16 @@ export default function Dashboard() {
   });
 
   // Fan control mutation - initialize from printer data
-  const [fanOn, setFanOn] = useState(selectedPrinter?.fanOn ?? false);
+  const [fanOn, setFanOn] = useState(false);
+  const fanInitialized = useRef(false);
   
-  // Sync fan state when printer data changes
+  // Sync fan state only on initial printer load
   useEffect(() => {
-    if (selectedPrinter) {
+    if (selectedPrinter && !fanInitialized.current) {
       setFanOn(selectedPrinter.fanOn ?? false);
+      fanInitialized.current = true;
     }
-  }, [selectedPrinter?.id, selectedPrinter?.fanOn]);
+  }, [selectedPrinter?.id]);
 
   const fanMutation = useMutation({
     mutationFn: async ({ printerId, power }: { printerId: number; power: number }) => {
