@@ -511,7 +511,55 @@ export async function registerRoutes(
         throw new Error(`Upload failed: ${response.status}`);
       }
 
-      res.json({ message: "Print started" });
+      // Now start the print using G-code commands
+      // Snapmaker stores uploaded files in wifiTransfer/ directory
+      // M23 selects the file, M24 starts printing
+      const startPrintUrl = `http://${printer.ipAddress}:${SNAPMAKER_PORT}/api/v1/execute_code`;
+      const filePath = `wifiTransfer/${file.filename}`;
+      
+      // First, select the file with M23
+      const selectParams = new URLSearchParams();
+      selectParams.append("token", printer.token);
+      selectParams.append("code", `M23 ${filePath}`);
+      
+      const selectResponse = await fetch(startPrintUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: selectParams.toString(),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      console.log(`[print] M23 select file response: ${selectResponse.status}`);
+      if (!selectResponse.ok) {
+        const errorText = await selectResponse.text().catch(() => "");
+        console.log(`[print] M23 error: ${errorText}`);
+        throw new Error(`Failed to select file for printing: ${selectResponse.status}`);
+      }
+
+      // Then start the print with M24
+      const startParams = new URLSearchParams();
+      startParams.append("token", printer.token);
+      startParams.append("code", "M24");
+      
+      const startResponse = await fetch(startPrintUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: startParams.toString(),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      console.log(`[print] M24 start print response: ${startResponse.status}`);
+      if (!startResponse.ok) {
+        const errorText = await startResponse.text().catch(() => "");
+        console.log(`[print] M24 error: ${errorText}`);
+        throw new Error(`Failed to start print: ${startResponse.status}`);
+      }
+
+      res.json({ message: "Print started successfully", filename: file.filename });
     } catch (error) {
       res.status(500).json({
         error: error instanceof Error ? error.message : "Failed to start print",
