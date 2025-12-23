@@ -9,8 +9,6 @@ export const printers = pgTable("printers", {
   token: text("token"),
   isConnected: boolean("is_connected").default(false),
   lastSeen: timestamp("last_seen"),
-  lightOn: boolean("light_on").default(false),
-  fanOn: boolean("fan_on").default(false),
 });
 
 export const printJobs = pgTable("print_jobs", {
