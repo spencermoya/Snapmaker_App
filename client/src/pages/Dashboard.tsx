@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { useEffect, useState, useCallback, memo, useRef } from "react";
+import { useEffect, useState, useCallback, memo } from "react";
 import PrinterStatus from "@/components/PrinterStatus";
 import TemperatureChart from "@/components/TemperatureChart";
 import JogControls from "@/components/JogControls";
@@ -324,16 +324,14 @@ export default function Dashboard() {
   });
 
   // Light control mutation - initialize from printer data
-  const [lightOn, setLightOn] = useState(false);
-  const lightInitialized = useRef(false);
+  const [lightOn, setLightOn] = useState(selectedPrinter?.lightOn ?? false);
   
-  // Sync light state only on initial printer load
+  // Sync light state when printer data changes
   useEffect(() => {
-    if (selectedPrinter && !lightInitialized.current) {
+    if (selectedPrinter) {
       setLightOn(selectedPrinter.lightOn ?? false);
-      lightInitialized.current = true;
     }
-  }, [selectedPrinter?.id]);
+  }, [selectedPrinter?.id, selectedPrinter?.lightOn]);
 
   const lightMutation = useMutation({
     mutationFn: async ({ printerId, power }: { printerId: number; power: number }) => {
@@ -351,6 +349,7 @@ export default function Dashboard() {
     onSuccess: (data) => {
       const isOn = data.power > 0;
       setLightOn(isOn);
+      queryClient.invalidateQueries({ queryKey: ["/api/printers"] });
       toast.success(isOn ? "Light turned on" : "Light turned off");
     },
     onError: (error: Error) => {
@@ -359,16 +358,14 @@ export default function Dashboard() {
   });
 
   // Fan control mutation - initialize from printer data
-  const [fanOn, setFanOn] = useState(false);
-  const fanInitialized = useRef(false);
+  const [fanOn, setFanOn] = useState(selectedPrinter?.fanOn ?? false);
   
-  // Sync fan state only on initial printer load
+  // Sync fan state when printer data changes
   useEffect(() => {
-    if (selectedPrinter && !fanInitialized.current) {
+    if (selectedPrinter) {
       setFanOn(selectedPrinter.fanOn ?? false);
-      fanInitialized.current = true;
     }
-  }, [selectedPrinter?.id]);
+  }, [selectedPrinter?.id, selectedPrinter?.fanOn]);
 
   const fanMutation = useMutation({
     mutationFn: async ({ printerId, power }: { printerId: number; power: number }) => {
@@ -386,6 +383,7 @@ export default function Dashboard() {
     onSuccess: (data) => {
       const isOn = data.power > 0;
       setFanOn(isOn);
+      queryClient.invalidateQueries({ queryKey: ["/api/printers"] });
       toast.success(isOn ? "Fan turned on" : "Fan turned off");
     },
     onError: (error: Error) => {
@@ -602,17 +600,8 @@ export default function Dashboard() {
       )}
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* Loading State */}
-        {printersLoading && (
-          <Card className="p-6 bg-secondary/20 border-border">
-            <div className="flex items-center justify-center py-12">
-              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          </Card>
-        )}
-
-        {/* Printer Connection Section - Show when no printers exist (after loading) */}
-        {!printersLoading && printers.length === 0 && (
+        {/* Printer Connection Section - Show when no printers exist */}
+        {printers.length === 0 && (
           <Card className="p-6 bg-secondary/20 border-border">
             <div className="flex items-center justify-between mb-4">
               <div>
