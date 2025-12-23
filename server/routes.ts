@@ -466,7 +466,11 @@ export async function registerRoutes(
         printer.token
       );
 
-      res.json({ message: `Light set to ${brightness}%`, power: brightness });
+      // Persist the light state
+      const lightOn = brightness > 0;
+      await storage.updatePrinter(printerId, { lightOn });
+
+      res.json({ message: `Light set to ${brightness}%`, power: brightness, lightOn });
     } catch (error) {
       res.status(500).json({
         error: error instanceof Error ? error.message : "Failed to control light",
@@ -501,7 +505,11 @@ export async function registerRoutes(
         printer.token
       );
 
-      res.json({ message: `Fan set to ${speed}%`, power: speed });
+      // Persist the fan state
+      const fanOn = speed > 0;
+      await storage.updatePrinter(printerId, { fanOn });
+
+      res.json({ message: `Fan set to ${speed}%`, power: speed, fanOn });
     } catch (error) {
       res.status(500).json({
         error: error instanceof Error ? error.message : "Failed to control fan",

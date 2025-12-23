@@ -323,8 +323,16 @@ export default function Dashboard() {
     },
   });
 
-  // Light control mutation
-  const [lightOn, setLightOn] = useState(false);
+  // Light control mutation - initialize from printer data
+  const [lightOn, setLightOn] = useState(selectedPrinter?.lightOn ?? false);
+  
+  // Sync light state when printer data changes
+  useEffect(() => {
+    if (selectedPrinter) {
+      setLightOn(selectedPrinter.lightOn ?? false);
+    }
+  }, [selectedPrinter?.id, selectedPrinter?.lightOn]);
+
   const lightMutation = useMutation({
     mutationFn: async ({ printerId, power }: { printerId: number; power: number }) => {
       const res = await fetch(`/api/printers/${printerId}/light`, {
@@ -341,6 +349,7 @@ export default function Dashboard() {
     onSuccess: (data) => {
       const isOn = data.power > 0;
       setLightOn(isOn);
+      queryClient.invalidateQueries({ queryKey: ["/api/printers"] });
       toast.success(isOn ? "Light turned on" : "Light turned off");
     },
     onError: (error: Error) => {
@@ -348,8 +357,16 @@ export default function Dashboard() {
     },
   });
 
-  // Fan control mutation
-  const [fanOn, setFanOn] = useState(false);
+  // Fan control mutation - initialize from printer data
+  const [fanOn, setFanOn] = useState(selectedPrinter?.fanOn ?? false);
+  
+  // Sync fan state when printer data changes
+  useEffect(() => {
+    if (selectedPrinter) {
+      setFanOn(selectedPrinter.fanOn ?? false);
+    }
+  }, [selectedPrinter?.id, selectedPrinter?.fanOn]);
+
   const fanMutation = useMutation({
     mutationFn: async ({ printerId, power }: { printerId: number; power: number }) => {
       const res = await fetch(`/api/printers/${printerId}/fan`, {
@@ -366,6 +383,7 @@ export default function Dashboard() {
     onSuccess: (data) => {
       const isOn = data.power > 0;
       setFanOn(isOn);
+      queryClient.invalidateQueries({ queryKey: ["/api/printers"] });
       toast.success(isOn ? "Fan turned on" : "Fan turned off");
     },
     onError: (error: Error) => {
