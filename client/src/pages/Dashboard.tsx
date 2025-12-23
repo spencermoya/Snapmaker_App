@@ -488,6 +488,17 @@ export default function Dashboard() {
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
+      {/* Fixed Settings Button - Top Right */}
+      <Button
+        variant="outline"
+        size="icon"
+        className="fixed top-4 right-4 z-40 bg-background/80 backdrop-blur-sm text-muted-foreground hover:text-foreground"
+        onClick={() => setLocation("/settings")}
+        data-testid="button-settings"
+      >
+        <Settings className="h-4 w-4" />
+      </Button>
+
       {isDragging && (
         <div 
           className="fixed inset-0 bg-primary/20 backdrop-blur-sm z-50 flex items-center justify-center pointer-events-none"
@@ -622,15 +633,6 @@ export default function Dashboard() {
                     <Wifi className="h-4 w-4" />
                   </Button>
                 )}
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={() => setLocation("/settings")}
-                  data-testid="button-settings"
-                >
-                  <Settings className="h-4 w-4" />
-                </Button>
                 <Separator orientation="vertical" className="h-9" />
                 <Button
                   variant="destructive"
