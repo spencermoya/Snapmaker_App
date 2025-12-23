@@ -494,7 +494,8 @@ export default function Dashboard() {
             key={moduleId}
             status={isConnected ? mapStatus(status?.state || "idle") : "idle"} 
             progress={status?.progress || 0} 
-            timeLeft={formatTimeRemaining(status?.timeRemaining || null)} 
+            timeLeft={formatTimeRemaining(status?.timeRemaining || null)}
+            timeRemainingSeconds={status?.timeRemaining}
             filename={status?.currentFile || (isConnected ? "No active job" : "Printer offline")} 
           />
         );

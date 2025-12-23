@@ -1,16 +1,18 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Clock, Thermometer, Activity } from "lucide-react";
+import { Clock, Timer, Activity } from "lucide-react";
 
 interface PrinterStatusProps {
   status: "idle" | "printing" | "paused" | "error";
   progress: number;
   timeLeft: string;
+  timeRemainingSeconds?: number | null;
+  elapsedTime?: string;
   filename?: string;
 }
 
-export default function PrinterStatus({ status, progress, timeLeft, filename }: PrinterStatusProps) {
+export default function PrinterStatus({ status, progress, timeLeft, timeRemainingSeconds, elapsedTime, filename }: PrinterStatusProps) {
   const getStatusColor = (s: string) => {
     switch (s) {
       case "printing": return "bg-green-500 hover:bg-green-600";
@@ -18,6 +20,15 @@ export default function PrinterStatus({ status, progress, timeLeft, filename }: 
       case "error": return "bg-destructive hover:bg-destructive/90";
       default: return "bg-primary hover:bg-primary/90";
     }
+  };
+
+  const calculateETA = (): string => {
+    if (!timeRemainingSeconds || timeRemainingSeconds <= 0) {
+      return "--:--";
+    }
+    const now = new Date();
+    const eta = new Date(now.getTime() + timeRemainingSeconds * 1000);
+    return eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   return (
@@ -51,15 +62,23 @@ export default function PrinterStatus({ status, progress, timeLeft, filename }: 
               <span className="text-xs text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                 <Clock className="h-3 w-3" /> Time Left
               </span>
-              <span className="text-xl font-mono">{timeLeft}</span>
+              <span className="text-xl font-mono" data-testid="text-time-left">{timeLeft}</span>
             </div>
             <div className="flex flex-col space-y-1">
               <span className="text-xs text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                 ETA
+                <Timer className="h-3 w-3" /> ETA
               </span>
-              <span className="text-xl font-mono text-muted-foreground">14:30</span>
+              <span className="text-xl font-mono text-muted-foreground" data-testid="text-eta">{calculateETA()}</span>
             </div>
           </div>
+          {elapsedTime && (
+            <div className="pt-4 border-t border-border/50">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Elapsed</span>
+                <span className="font-mono" data-testid="text-elapsed">{elapsedTime}</span>
+              </div>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
