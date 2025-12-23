@@ -543,9 +543,20 @@ export default function Dashboard() {
               <div>
                 <h1 className="text-3xl font-bold tracking-tight text-foreground flex items-center gap-3">
                   <span data-testid="text-printer-name">{selectedPrinter.name}</span>
-                  <span className={`text-xs font-mono font-normal border px-2 py-0.5 rounded-full ${isConnected ? 'text-muted-foreground' : 'text-amber-500 border-amber-500/50'}`}>
-                    {isConnected ? (status?.state || "idle") : "offline"}
-                  </span>
+                  {isConnected ? (
+                    <span className="text-xs font-mono font-normal border px-2 py-0.5 rounded-full text-muted-foreground">
+                      {status?.state || "idle"}
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => connectMutation.mutate(selectedPrinter.id)}
+                      disabled={connectMutation.isPending}
+                      className="text-xs font-mono font-normal border px-2 py-0.5 rounded-full text-amber-500 border-amber-500/50 hover:bg-amber-500/20 hover:border-amber-500 transition-colors cursor-pointer disabled:opacity-50"
+                      data-testid="button-reconnect-offline"
+                    >
+                      {connectMutation.isPending ? "connecting..." : "offline"}
+                    </button>
+                  )}
                 </h1>
                 <p className="text-muted-foreground mt-1" data-testid="text-printer-ip">
                   {isConnected ? "Connected via Wi-Fi" : "Not connected"} • {selectedPrinter.ipAddress}
