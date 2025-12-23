@@ -5,6 +5,7 @@ import { storage } from "./storage";
 import { startWatcher, stopWatcher, getWatcherStatus, initializeWatcher } from "./fileWatcher";
 import { startLubanProxy, stopLubanProxy, getLubanProxyStatus, initializeLubanProxy } from "./lubanProxy";
 import { extractThumbnail } from "./thumbnailExtractor";
+import { getPlugSettings, savePlugSettings, getPlugStatus, setPlugPower, testPlugConnection } from "./smartPlug";
 import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } from "@shared/schema";
 import { z } from "zod";
 
@@ -1024,6 +1025,101 @@ export async function registerRoutes(
       res.status(500).json({
         error: error instanceof Error ? error.message : "Failed to configure Luban proxy",
       });
+    }
+  });
+
+  // Smart Plug settings and control
+  app.get("/api/settings/smart-plug", async (req, res) => {
+    try {
+      const settings = await getPlugSettings();
+      const status = await getPlugStatus();
+      res.json({
+        ...settings,
+        ...status,
+        deviceKey: settings.deviceKey ? "***configured***" : null,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get smart plug settings" });
+    }
+  });
+
+  app.put("/api/settings/smart-plug", async (req, res) => {
+    try {
+      const { ipAddress, deviceKey, enabled } = req.body;
+      
+      await savePlugSettings({ ipAddress, deviceKey, enabled });
+      
+      const settings = await getPlugSettings();
+      const status = await getPlugStatus();
+      
+      res.json({
+        success: true,
+        message: enabled ? "Smart plug enabled" : "Smart plug disabled",
+        ...settings,
+        ...status,
+        deviceKey: settings.deviceKey ? "***configured***" : null,
+      });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to save smart plug settings",
+      });
+    }
+  });
+
+  app.post("/api/settings/smart-plug/test", async (req, res) => {
+    try {
+      const { ipAddress, deviceKey } = req.body;
+      
+      if (!ipAddress || !deviceKey) {
+        return res.status(400).json({ error: "IP address and device key are required" });
+      }
+      
+      const result = await testPlugConnection(ipAddress, deviceKey);
+      
+      if (result.success) {
+        res.json({ success: true, message: "Connection successful" });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to test connection",
+      });
+    }
+  });
+
+  app.post("/api/smart-plug/power", async (req, res) => {
+    try {
+      const { turnOn } = req.body;
+      
+      if (typeof turnOn !== "boolean") {
+        return res.status(400).json({ error: "turnOn must be a boolean" });
+      }
+      
+      const result = await setPlugPower(turnOn);
+      
+      if (result.success) {
+        res.json({ 
+          success: true, 
+          isOn: result.isOn,
+          message: result.isOn ? "Plug turned on" : "Plug turned off" 
+        });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to control plug",
+      });
+    }
+  });
+
+  app.get("/api/smart-plug/status", async (req, res) => {
+    try {
+      const status = await getPlugStatus();
+      res.json(status);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get plug status" });
     }
   });
 

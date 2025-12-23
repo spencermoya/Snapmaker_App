@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Plus, Trash2, Wifi, WifiOff, ArrowLeft, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio } from "lucide-react";
+import { Plus, Trash2, Wifi, WifiOff, ArrowLeft, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Plug } from "lucide-react";
 import { useLocation } from "wouter";
 import type { Printer } from "@shared/schema";
 
@@ -28,6 +29,14 @@ interface SettingsData {
   };
 }
 
+interface SmartPlugSettings {
+  ipAddress: string | null;
+  deviceKey: string | null;
+  enabled: boolean;
+  isOn: boolean;
+  reachable: boolean;
+}
+
 export default function Settings() {
   const [, setLocation] = useLocation();
   const [newPrinterName, setNewPrinterName] = useState("");
@@ -35,6 +44,8 @@ export default function Settings() {
   const [watchFolderPath, setWatchFolderPath] = useState("");
   const [lubanProxyIp, setLubanProxyIp] = useState("");
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [plugIpAddress, setPlugIpAddress] = useState("");
+  const [plugDeviceKey, setPlugDeviceKey] = useState("");
   const queryClient = useQueryClient();
 
   const { data: printers = [], isLoading } = useQuery<Printer[]>({
@@ -43,6 +54,10 @@ export default function Settings() {
 
   const { data: settings } = useQuery<SettingsData>({
     queryKey: ["/api/settings"],
+  });
+
+  const { data: smartPlugSettings } = useQuery<SmartPlugSettings>({
+    queryKey: ["/api/settings/smart-plug"],
   });
 
   const addPrinterMutation = useMutation({
@@ -155,6 +170,51 @@ export default function Settings() {
       queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
       toast.success(data.message);
       setLubanProxyIp("");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const smartPlugMutation = useMutation({
+    mutationFn: async (data: { ipAddress?: string; deviceKey?: string; enabled?: boolean }) => {
+      const res = await fetch("/api/settings/smart-plug", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to update smart plug settings");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/smart-plug"] });
+      toast.success(data.message);
+      setPlugIpAddress("");
+      setPlugDeviceKey("");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const testPlugMutation = useMutation({
+    mutationFn: async (data: { ipAddress: string; deviceKey: string }) => {
+      const res = await fetch("/api/settings/smart-plug/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to test connection");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success("Connection successful! You can now save these settings.");
     },
     onError: (error: Error) => {
       toast.error(error.message);
@@ -587,6 +647,117 @@ export default function Settings() {
                   This feature only works when running on a Raspberry Pi or computer on the same network as your printer. 
                   It won't work from cloud-hosted environments.
                 </p>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-6 bg-secondary/20 border-border">
+          <div className="flex items-center gap-2 mb-4">
+            <Plug className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold">Smart Plug Control</h2>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            Connect a Meross smart plug to automatically power on your printer before prints 
+            and power off after completion. Requires a Meross plug on the same network.
+          </p>
+          
+          {smartPlugSettings?.enabled && smartPlugSettings?.ipAddress ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+                {smartPlugSettings.reachable ? (
+                  <CheckCircle className="h-5 w-5 text-green-500" />
+                ) : (
+                  <XCircle className="h-5 w-5 text-yellow-500" />
+                )}
+                <div className="flex-1">
+                  <p className="text-sm font-medium">
+                    {smartPlugSettings.reachable ? "Smart Plug Connected" : "Plug Configured (not reachable)"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    IP: {smartPlugSettings.ipAddress} • {smartPlugSettings.isOn ? "Power ON" : "Power OFF"}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => smartPlugMutation.mutate({ enabled: false })}
+                  disabled={smartPlugMutation.isPending}
+                  data-testid="button-disable-plug"
+                >
+                  Disable
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid gap-2">
+                <Label htmlFor="plug-ip">Plug IP Address</Label>
+                <Input
+                  id="plug-ip"
+                  placeholder="e.g., 192.168.1.100"
+                  value={plugIpAddress}
+                  onChange={(e) => setPlugIpAddress(e.target.value)}
+                  data-testid="input-plug-ip"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="plug-key">Device Key</Label>
+                <Input
+                  id="plug-key"
+                  type="password"
+                  placeholder="Your Meross device key"
+                  value={plugDeviceKey}
+                  onChange={(e) => setPlugDeviceKey(e.target.value)}
+                  data-testid="input-plug-key"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Get your device key using the <code className="bg-muted px-1 rounded">meross-login</code> tool
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (!plugIpAddress.trim() || !plugDeviceKey.trim()) {
+                      toast.error("Please enter both IP address and device key");
+                      return;
+                    }
+                    testPlugMutation.mutate({ ipAddress: plugIpAddress, deviceKey: plugDeviceKey });
+                  }}
+                  disabled={testPlugMutation.isPending || !plugIpAddress.trim() || !plugDeviceKey.trim()}
+                  data-testid="button-test-plug"
+                >
+                  Test Connection
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (!plugIpAddress.trim() || !plugDeviceKey.trim()) {
+                      toast.error("Please enter both IP address and device key");
+                      return;
+                    }
+                    smartPlugMutation.mutate({ 
+                      ipAddress: plugIpAddress, 
+                      deviceKey: plugDeviceKey, 
+                      enabled: true 
+                    });
+                  }}
+                  disabled={smartPlugMutation.isPending || !plugIpAddress.trim() || !plugDeviceKey.trim()}
+                  data-testid="button-save-plug"
+                >
+                  <Plug className="h-4 w-4 mr-2" />
+                  Enable Smart Plug
+                </Button>
+              </div>
+              
+              <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                <h3 className="font-medium text-sm mb-2 text-blue-400">How to Get Your Device Key</h3>
+                <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+                  <li>Install the tool: <code className="bg-muted px-1 rounded">npm install -g meross-login</code></li>
+                  <li>Run <code className="bg-muted px-1 rounded">meross-login</code> and enter your Meross credentials</li>
+                  <li>Copy the <code className="bg-muted px-1 rounded">key</code> value from the output</li>
+                  <li>Find your plug's IP in your router's device list or the Meross app</li>
+                </ol>
               </div>
             </div>
           )}

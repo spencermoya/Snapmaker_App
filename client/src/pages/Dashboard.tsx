@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Power, Settings, Fan, Lightbulb, PauseCircle, StopCircle, Plus, RefreshCw, Wifi, WifiOff, Trash2, LayoutGrid, Upload } from "lucide-react";
+import { Power, Settings, Fan, Lightbulb, PauseCircle, StopCircle, Plus, RefreshCw, Wifi, WifiOff, Trash2, LayoutGrid, Upload, Plug } from "lucide-react";
 import { toast } from "sonner";
 import type { Printer, PrinterStatus as PrinterStatusType } from "@shared/schema";
 import { DEFAULT_ENABLED_MODULES } from "@shared/schema";
@@ -122,6 +122,38 @@ export default function Dashboard() {
   const [dragCounter, setDragCounter] = useState(0);
   const [lightOn, setLightOn] = useState(false);
   const [fanOn, setFanOn] = useState(false);
+
+  interface SmartPlugStatus {
+    isOn: boolean;
+    reachable: boolean;
+  }
+
+  const { data: plugStatus } = useQuery<SmartPlugStatus>({
+    queryKey: ["/api/smart-plug/status"],
+    refetchInterval: 10000,
+  });
+
+  const plugPowerMutation = useMutation({
+    mutationFn: async (turnOn: boolean) => {
+      const res = await fetch("/api/smart-plug/power", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ turnOn }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to control plug");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/smart-plug/status"] });
+      toast.success(data.message);
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
 
   const { data: printers = [], isLoading: printersLoading } = useQuery<Printer[]>({
     queryKey: ["/api/printers"],
@@ -631,6 +663,19 @@ export default function Dashboard() {
               </div>
               
               <div className="flex gap-3">
+                {plugStatus?.reachable && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className={`${plugStatus?.isOn ? 'text-green-500 border-green-500/50' : 'text-muted-foreground'} hover:text-foreground`}
+                    onClick={() => plugPowerMutation.mutate(!plugStatus?.isOn)}
+                    disabled={plugPowerMutation.isPending}
+                    data-testid="button-plug-power"
+                    title={plugStatus?.isOn ? "Turn off smart plug" : "Turn on smart plug"}
+                  >
+                    <Plug className="h-4 w-4" />
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="icon"
