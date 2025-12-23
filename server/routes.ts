@@ -408,6 +408,107 @@ export async function registerRoutes(
     }
   });
 
+  // Emergency Stop
+  app.post("/api/printers/:id/estop", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const printer = await storage.getPrinter(printerId);
+      
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+
+      if (!printer.token) {
+        return res.status(400).json({ error: "Printer not connected" });
+      }
+
+      // M112 is the standard emergency stop G-code
+      await snapmakerRequest(
+        printer.ipAddress,
+        "/api/v1/execute_code",
+        "POST",
+        `token=${encodeURIComponent(printer.token)}&code=${encodeURIComponent("M112")}`,
+        printer.token
+      );
+
+      res.json({ message: "Emergency stop sent" });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to send emergency stop",
+      });
+    }
+  });
+
+  // LED Light Control
+  app.post("/api/printers/:id/light", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const printer = await storage.getPrinter(printerId);
+      
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+
+      if (!printer.token) {
+        return res.status(400).json({ error: "Printer not connected" });
+      }
+
+      const { power } = req.body; // 0-100
+      const brightness = Math.max(0, Math.min(100, power ?? 100));
+      
+      // M1010 S3 P<value> controls enclosure LED (0-100)
+      const gcode = `M1010 S3 P${brightness}`;
+      await snapmakerRequest(
+        printer.ipAddress,
+        "/api/v1/execute_code",
+        "POST",
+        `token=${encodeURIComponent(printer.token)}&code=${encodeURIComponent(gcode)}`,
+        printer.token
+      );
+
+      res.json({ message: `Light set to ${brightness}%`, power: brightness });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to control light",
+      });
+    }
+  });
+
+  // Enclosure Fan Control
+  app.post("/api/printers/:id/fan", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const printer = await storage.getPrinter(printerId);
+      
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+
+      if (!printer.token) {
+        return res.status(400).json({ error: "Printer not connected" });
+      }
+
+      const { power } = req.body; // 0-100
+      const speed = Math.max(0, Math.min(100, power ?? 100));
+      
+      // M1010 S4 P<value> controls enclosure fan (0-100)
+      const gcode = `M1010 S4 P${speed}`;
+      await snapmakerRequest(
+        printer.ipAddress,
+        "/api/v1/execute_code",
+        "POST",
+        `token=${encodeURIComponent(printer.token)}&code=${encodeURIComponent(gcode)}`,
+        printer.token
+      );
+
+      res.json({ message: `Fan set to ${speed}%`, power: speed });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to control fan",
+      });
+    }
+  });
+
   app.get("/api/printers/:id/files", async (req, res) => {
     try {
       const printerId = parseInt(req.params.id);

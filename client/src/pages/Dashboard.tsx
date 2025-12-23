@@ -304,6 +304,75 @@ export default function Dashboard() {
     },
   });
 
+  // E-STOP mutation
+  const estopMutation = useMutation({
+    mutationFn: async (printerId: number) => {
+      const res = await fetch(`/api/printers/${printerId}/estop`, { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to send emergency stop");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success("Emergency stop sent!");
+      queryClient.invalidateQueries({ queryKey: ["/api/printers"] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  // Light control mutation
+  const [lightOn, setLightOn] = useState(false);
+  const lightMutation = useMutation({
+    mutationFn: async ({ printerId, power }: { printerId: number; power: number }) => {
+      const res = await fetch(`/api/printers/${printerId}/light`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ power }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to control light");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      const isOn = data.power > 0;
+      setLightOn(isOn);
+      toast.success(isOn ? "Light turned on" : "Light turned off");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  // Fan control mutation
+  const [fanOn, setFanOn] = useState(false);
+  const fanMutation = useMutation({
+    mutationFn: async ({ printerId, power }: { printerId: number; power: number }) => {
+      const res = await fetch(`/api/printers/${printerId}/fan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ power }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to control fan");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      const isOn = data.power > 0;
+      setFanOn(isOn);
+      toast.success(isOn ? "Fan turned on" : "Fan turned off");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -567,7 +636,12 @@ export default function Dashboard() {
                 <Button
                   variant="outline"
                   size="icon"
-                  className="text-muted-foreground hover:text-foreground"
+                  className={`${lightOn ? 'text-yellow-500 border-yellow-500/50' : 'text-muted-foreground'} hover:text-foreground`}
+                  onClick={() => selectedPrinter && lightMutation.mutate({ 
+                    printerId: selectedPrinter.id, 
+                    power: lightOn ? 0 : 100 
+                  })}
+                  disabled={!isConnected || lightMutation.isPending}
                   data-testid="button-light"
                 >
                   <Lightbulb className="h-4 w-4" />
@@ -575,7 +649,12 @@ export default function Dashboard() {
                 <Button
                   variant="outline"
                   size="icon"
-                  className="text-muted-foreground hover:text-foreground"
+                  className={`${fanOn ? 'text-blue-500 border-blue-500/50' : 'text-muted-foreground'} hover:text-foreground`}
+                  onClick={() => selectedPrinter && fanMutation.mutate({ 
+                    printerId: selectedPrinter.id, 
+                    power: fanOn ? 0 : 100 
+                  })}
+                  disabled={!isConnected || fanMutation.isPending}
                   data-testid="button-fan"
                 >
                   <Fan className="h-4 w-4" />
@@ -648,9 +727,11 @@ export default function Dashboard() {
                 <Button
                   variant="destructive"
                   className="shadow-[0_0_20px_rgba(239,68,68,0.3)]"
+                  onClick={() => selectedPrinter && estopMutation.mutate(selectedPrinter.id)}
+                  disabled={!isConnected || estopMutation.isPending}
                   data-testid="button-estop"
                 >
-                  <Power className="h-4 w-4 mr-2" /> E-STOP
+                  <Power className="h-4 w-4 mr-2" /> {estopMutation.isPending ? "STOPPING..." : "E-STOP"}
                 </Button>
               </div>
             </header>
