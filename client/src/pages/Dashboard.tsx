@@ -604,8 +604,17 @@ export default function Dashboard() {
       )}
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* Printer Connection Section - Show when no printers exist */}
-        {printers.length === 0 && (
+        {/* Loading State */}
+        {printersLoading && (
+          <Card className="p-6 bg-secondary/20 border-border">
+            <div className="flex items-center justify-center py-12">
+              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          </Card>
+        )}
+
+        {/* Printer Connection Section - Show when no printers exist (after loading) */}
+        {!printersLoading && printers.length === 0 && (
           <Card className="p-6 bg-secondary/20 border-border">
             <div className="flex items-center justify-between mb-4">
               <div>
