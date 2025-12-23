@@ -351,7 +351,6 @@ export default function Dashboard() {
     onSuccess: (data) => {
       const isOn = data.power > 0;
       setLightOn(isOn);
-      queryClient.invalidateQueries({ queryKey: ["/api/printers"] });
       toast.success(isOn ? "Light turned on" : "Light turned off");
     },
     onError: (error: Error) => {
@@ -387,7 +386,6 @@ export default function Dashboard() {
     onSuccess: (data) => {
       const isOn = data.power > 0;
       setFanOn(isOn);
-      queryClient.invalidateQueries({ queryKey: ["/api/printers"] });
       toast.success(isOn ? "Fan turned on" : "Fan turned off");
     },
     onError: (error: Error) => {
