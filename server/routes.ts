@@ -1123,6 +1123,49 @@ export async function registerRoutes(
     }
   });
 
+  // Print stats endpoints
+  app.get("/api/printers/:id/stats", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const totals = await storage.getPrintStatsTotals(printerId);
+      res.json(totals);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get print stats" });
+    }
+  });
+
+  app.post("/api/printers/:id/stats", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const { filename, printTimeSeconds, filamentUsedMm } = req.body;
+      
+      if (!filename || typeof printTimeSeconds !== "number") {
+        return res.status(400).json({ error: "filename and printTimeSeconds are required" });
+      }
+
+      const stat = await storage.addPrintStat({
+        printerId,
+        filename,
+        printTimeSeconds,
+        filamentUsedMm: filamentUsedMm ?? 0,
+      });
+      
+      res.json(stat);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to add print stat" });
+    }
+  });
+
+  app.get("/api/printers/:id/stats/history", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const stats = await storage.getPrintStats(printerId);
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get print history" });
+    }
+  });
+
   // Initialize file watcher and Luban proxy on startup
   initializeWatcher().catch((err) => {
     console.error("Failed to initialize file watcher:", err);

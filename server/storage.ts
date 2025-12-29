@@ -1,4 +1,5 @@
-import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, printers, printJobs, dashboardPreferences, uploadedFiles, appSettings, DEFAULT_ENABLED_MODULES } from "@shared/schema";
+import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, type PrintStat, type InsertPrintStat, printers, printJobs, dashboardPreferences, uploadedFiles, appSettings, printStats, DEFAULT_ENABLED_MODULES } from "@shared/schema";
+import { sql } from "drizzle-orm";
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 
@@ -17,6 +18,9 @@ export interface IStorage {
   deleteUploadedFile(id: number, printerId: number): Promise<boolean>;
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string | null): Promise<void>;
+  addPrintStat(stat: InsertPrintStat): Promise<PrintStat>;
+  getPrintStats(printerId: number): Promise<PrintStat[]>;
+  getPrintStatsTotals(printerId: number): Promise<{ totalPrintTimeSeconds: number; totalFilamentUsedMm: number; totalPrints: number }>;
 }
 
 export class DbStorage implements IStorage {
@@ -135,6 +139,35 @@ export class DbStorage implements IStorage {
     } else {
       await db.insert(appSettings).values({ key, value });
     }
+  }
+
+  async addPrintStat(stat: InsertPrintStat): Promise<PrintStat> {
+    const result = await db.insert(printStats).values(stat).returning();
+    return result[0]!;
+  }
+
+  async getPrintStats(printerId: number): Promise<PrintStat[]> {
+    return await db
+      .select()
+      .from(printStats)
+      .where(eq(printStats.printerId, printerId));
+  }
+
+  async getPrintStatsTotals(printerId: number): Promise<{ totalPrintTimeSeconds: number; totalFilamentUsedMm: number; totalPrints: number }> {
+    const result = await db
+      .select({
+        totalPrintTimeSeconds: sql<number>`COALESCE(SUM(${printStats.printTimeSeconds}), 0)`,
+        totalFilamentUsedMm: sql<number>`COALESCE(SUM(${printStats.filamentUsedMm}), 0)`,
+        totalPrints: sql<number>`COUNT(*)`,
+      })
+      .from(printStats)
+      .where(eq(printStats.printerId, printerId));
+    
+    return {
+      totalPrintTimeSeconds: Number(result[0]?.totalPrintTimeSeconds ?? 0),
+      totalFilamentUsedMm: Number(result[0]?.totalFilamentUsedMm ?? 0),
+      totalPrints: Number(result[0]?.totalPrints ?? 0),
+    };
   }
 }
 

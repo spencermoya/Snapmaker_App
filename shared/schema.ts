@@ -44,6 +44,15 @@ export const appSettings = pgTable("app_settings", {
   value: text("value"),
 });
 
+export const printStats = pgTable("print_stats", {
+  id: serial("id").primaryKey(),
+  printerId: integer("printer_id").references(() => printers.id).notNull(),
+  filename: text("filename").notNull(),
+  printTimeSeconds: integer("print_time_seconds").notNull(),
+  filamentUsedMm: integer("filament_used_mm").default(0),
+  completedAt: timestamp("completed_at").defaultNow(),
+});
+
 export const insertPrinterSchema = createInsertSchema(printers).omit({
   id: true,
   lastSeen: true,
@@ -65,6 +74,11 @@ export const insertUploadedFileSchema = createInsertSchema(uploadedFiles).omit({
   uploadedAt: true,
 });
 
+export const insertPrintStatSchema = createInsertSchema(printStats).omit({
+  id: true,
+  completedAt: true,
+});
+
 export const DEFAULT_ENABLED_MODULES = [
   "status",
   "webcam", 
@@ -82,6 +96,8 @@ export type DashboardPreferences = typeof dashboardPreferences.$inferSelect;
 export type UploadedFile = typeof uploadedFiles.$inferSelect;
 export type InsertUploadedFile = z.infer<typeof insertUploadedFileSchema>;
 export type AppSetting = typeof appSettings.$inferSelect;
+export type PrintStat = typeof printStats.$inferSelect;
+export type InsertPrintStat = z.infer<typeof insertPrintStatSchema>;
 
 export type PrinterStatus = {
   state: string;
