@@ -29,6 +29,8 @@ interface DiscoveredDevice {
   port: number | null;
   deviceId: string | null;
   model: string | null;
+  manufacturer: string | null;
+  category: string | null;
 }
 
 interface SettingsData {
@@ -816,17 +818,27 @@ export default function Settings() {
                 <h3 className="text-sm font-medium">Discovered Devices</h3>
                 {discoveredDevices.map((device) => {
                   const alreadyAdded = smartPlugs.some(p => p.ipAddress === device.ipAddress);
+                  const deviceInfo = [
+                    device.manufacturer,
+                    device.model,
+                  ].filter(Boolean).join(" ");
                   return (
                     <div
                       key={device.ipAddress}
                       className="flex items-center gap-3 p-3 bg-green-500/10 border border-green-500/30 rounded-lg"
                     >
                       <Home className="h-5 w-5 text-orange-400" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">{device.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {device.ipAddress} • {device.type}
-                          {device.model && ` • ${device.model}`}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium truncate">{device.name}</p>
+                          {device.category && (
+                            <span className="text-xs px-1.5 py-0.5 bg-orange-500/20 text-orange-400 rounded">
+                              {device.category}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {deviceInfo || device.model || "HomeKit Device"} • {device.ipAddress}
                         </p>
                       </div>
                       {alreadyAdded ? (
