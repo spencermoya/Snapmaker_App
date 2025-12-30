@@ -1,4 +1,4 @@
-import Bonjour from "bonjour-service";
+import { Bonjour } from "bonjour-service";
 
 export interface DiscoveredDevice {
   name: string;
