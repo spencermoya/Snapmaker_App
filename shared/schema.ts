@@ -86,6 +86,7 @@ export const DEFAULT_ENABLED_MODULES = [
   "jogControls",
   "jobControls",
   "fileList",
+  "stats",
 ];
 
 export type Printer = typeof printers.$inferSelect;

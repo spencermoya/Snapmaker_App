@@ -1137,21 +1137,35 @@ export async function registerRoutes(
   app.post("/api/printers/:id/stats", async (req, res) => {
     try {
       const printerId = parseInt(req.params.id);
+      if (isNaN(printerId)) {
+        return res.status(400).json({ error: "Invalid printer ID" });
+      }
+
       const { filename, printTimeSeconds, filamentUsedMm } = req.body;
       
-      if (!filename || typeof printTimeSeconds !== "number") {
-        return res.status(400).json({ error: "filename and printTimeSeconds are required" });
+      if (!filename || typeof filename !== "string" || filename.trim().length === 0) {
+        return res.status(400).json({ error: "filename is required and must be a non-empty string" });
+      }
+      
+      if (typeof printTimeSeconds !== "number" || printTimeSeconds < 0 || !Number.isInteger(printTimeSeconds)) {
+        return res.status(400).json({ error: "printTimeSeconds must be a non-negative integer" });
+      }
+
+      const filamentValue = filamentUsedMm ?? 0;
+      if (typeof filamentValue !== "number" || filamentValue < 0) {
+        return res.status(400).json({ error: "filamentUsedMm must be a non-negative number" });
       }
 
       const stat = await storage.addPrintStat({
         printerId,
-        filename,
+        filename: filename.trim(),
         printTimeSeconds,
-        filamentUsedMm: filamentUsedMm ?? 0,
+        filamentUsedMm: Math.round(filamentValue),
       });
       
       res.json(stat);
     } catch (error) {
+      console.error("Failed to add print stat:", error);
       res.status(500).json({ error: "Failed to add print stat" });
     }
   });

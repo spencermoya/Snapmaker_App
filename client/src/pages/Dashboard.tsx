@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Power, Settings, Fan, Lightbulb, PauseCircle, StopCircle, Plus, RefreshCw, Wifi, WifiOff, Trash2, LayoutGrid, Upload, Plug } from "lucide-react";
+import { Power, Settings, Fan, Lightbulb, PauseCircle, StopCircle, Plus, RefreshCw, Wifi, WifiOff, Trash2, LayoutGrid, Upload, Plug, Clock, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import type { Printer, PrinterStatus as PrinterStatusType } from "@shared/schema";
 import { DEFAULT_ENABLED_MODULES } from "@shared/schema";
@@ -31,6 +31,7 @@ const MODULE_REGISTRY: ModuleConfig[] = [
   { id: "jogControls", title: "Jog Controls", column: "right" },
   { id: "jobControls", title: "Job Controls", column: "right" },
   { id: "fileList", title: "File List", column: "right" },
+  { id: "stats", title: "Print Stats", column: "right" },
 ];
 
 const AddPrinterForm = memo(function AddPrinterForm({
@@ -173,6 +174,18 @@ export default function Dashboard() {
   });
 
   const enabledModules = preferencesData?.enabledModules ?? DEFAULT_ENABLED_MODULES;
+
+  interface PrintStats {
+    totalPrintTimeSeconds: number;
+    totalFilamentUsedMm: number;
+    totalPrints: number;
+  }
+
+  const { data: printStats } = useQuery<PrintStats>({
+    queryKey: [`/api/printers/${selectedPrinter?.id}/stats`],
+    enabled: !!selectedPrinter,
+    staleTime: 60000,
+  });
 
   const updatePreferencesMutation = useMutation({
     mutationFn: async ({ printerId, enabledModules }: { printerId: number; enabledModules: string[] }) => {
@@ -571,6 +584,59 @@ export default function Dashboard() {
         );
       case "fileList":
         return <FileList key={moduleId} printerId={selectedPrinter.id} />;
+      case "stats":
+        const formatStatTime = (seconds: number): string => {
+          if (seconds === 0) return "0s";
+          const hours = Math.floor(seconds / 3600);
+          const minutes = Math.floor((seconds % 3600) / 60);
+          const secs = seconds % 60;
+          if (hours > 0) {
+            return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+          }
+          if (minutes > 0) {
+            return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`;
+          }
+          return `${secs}s`;
+        };
+        const formatFilament = (mm: number): string => {
+          if (mm === 0) return "0m";
+          const meters = mm / 1000;
+          return meters >= 1 ? `${meters.toFixed(1)}m` : `${mm}mm`;
+        };
+        return (
+          <Card key={moduleId} className="p-4 bg-secondary/20 border-border">
+            <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">Print Stats</h3>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <BarChart3 className="h-4 w-4" />
+                  <span className="text-sm">Total Prints</span>
+                </div>
+                <span className="text-lg font-medium" data-testid="text-total-prints">
+                  {printStats?.totalPrints ?? 0}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Clock className="h-4 w-4" />
+                  <span className="text-sm">Total Print Time</span>
+                </div>
+                <span className="text-lg font-medium" data-testid="text-total-time">
+                  {formatStatTime(printStats?.totalPrintTimeSeconds ?? 0)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <span className="h-4 w-4 text-center text-xs">🧵</span>
+                  <span className="text-sm">Total Filament</span>
+                </div>
+                <span className="text-lg font-medium" data-testid="text-total-filament">
+                  {formatFilament(printStats?.totalFilamentUsedMm ?? 0)}
+                </span>
+              </div>
+            </div>
+          </Card>
+        );
       default:
         return null;
     }
@@ -795,6 +861,7 @@ export default function Dashboard() {
                   {renderModule("jogControls")}
                   {renderModule("jobControls")}
                   {renderModule("fileList")}
+                  {renderModule("stats")}
                 </div>
               )}
 
