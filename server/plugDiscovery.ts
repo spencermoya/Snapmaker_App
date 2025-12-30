@@ -66,11 +66,40 @@ const MATTER_DEVICE_TYPE_MAP: Record<string, string> = {
   "44": "Air Purifier",
 };
 
-function getIPv4Address(addresses: string[] | undefined): string | null {
-  if (!addresses) return null;
-  return addresses.find(
+function getBestAddress(addresses: string[] | undefined): string | null {
+  if (!addresses || addresses.length === 0) return null;
+  
+  // First try to find a valid IPv4 address (preferred for display)
+  const ipv4 = addresses.find(
     (addr) => addr.includes(".") && !addr.startsWith("169.254")
-  ) || null;
+  );
+  if (ipv4) return ipv4;
+  
+  // Fall back to IPv6 - prefer global/ULA addresses over link-local
+  // Global unicast: 2xxx: or 3xxx:
+  // Unique local: fdxx: or fcxx:
+  // Link-local: fe80:
+  const globalIpv6 = addresses.find(
+    (addr) => addr.includes(":") && (addr.startsWith("2") || addr.startsWith("3"))
+  );
+  if (globalIpv6) return globalIpv6;
+  
+  const ulaIpv6 = addresses.find(
+    (addr) => addr.includes(":") && (addr.toLowerCase().startsWith("fd") || addr.toLowerCase().startsWith("fc"))
+  );
+  if (ulaIpv6) return ulaIpv6;
+  
+  // Finally try link-local IPv6 (strip the scope/zone ID if present)
+  const linkLocalIpv6 = addresses.find(
+    (addr) => addr.includes(":") && addr.toLowerCase().startsWith("fe80")
+  );
+  if (linkLocalIpv6) {
+    // Remove zone ID (e.g., fe80::1%eth0 -> fe80::1)
+    return linkLocalIpv6.split("%")[0];
+  }
+  
+  // Return any address as last resort
+  return addresses[0] || null;
 }
 
 export async function discoverHomeKitDevices(timeoutMs: number = 5000): Promise<DiscoveredDevice[]> {
@@ -83,7 +112,7 @@ export async function discoverHomeKitDevices(timeoutMs: number = 5000): Promise<
 
     try {
       const browser = bonjour.find({ type: "hap" }, (service) => {
-        const ipAddress = getIPv4Address(service.addresses);
+        const ipAddress = getBestAddress(service.addresses);
 
         if (ipAddress && !seenIps.has(ipAddress)) {
           seenIps.add(ipAddress);
@@ -136,7 +165,7 @@ export async function discoverMatterDevices(timeoutMs: number = 5000): Promise<D
 
     try {
       const browser = bonjour.find({ type: "matter", protocol: "tcp" }, (service) => {
-        const ipAddress = getIPv4Address(service.addresses);
+        const ipAddress = getBestAddress(service.addresses);
 
         if (ipAddress && !seenIps.has(ipAddress)) {
           seenIps.add(ipAddress);
@@ -203,7 +232,7 @@ export async function discoverMatterCommissionable(timeoutMs: number = 5000): Pr
 
     try {
       const browser = bonjour.find({ type: "matterc", protocol: "udp" }, (service) => {
-        const ipAddress = getIPv4Address(service.addresses);
+        const ipAddress = getBestAddress(service.addresses);
 
         if (ipAddress && !seenIps.has(ipAddress)) {
           seenIps.add(ipAddress);
