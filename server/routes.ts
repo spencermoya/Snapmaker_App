@@ -1195,7 +1195,18 @@ export async function registerRoutes(
   app.get("/api/smart-plugs", async (req, res) => {
     try {
       const plugs = await storage.getSmartPlugs();
-      res.json(plugs);
+      const safePlugs = plugs.map(plug => ({
+        id: plug.id,
+        name: plug.name,
+        type: plug.type,
+        ipAddress: plug.ipAddress,
+        port: plug.port,
+        deviceId: plug.deviceId,
+        isEnabled: plug.isEnabled,
+        hasCredentials: !!plug.credentials,
+        createdAt: plug.createdAt,
+      }));
+      res.json(safePlugs);
     } catch (error) {
       res.status(500).json({ error: "Failed to get smart plugs" });
     }
@@ -1219,7 +1230,17 @@ export async function registerRoutes(
         isEnabled: true,
       });
       
-      res.json(plug);
+      res.json({
+        id: plug.id,
+        name: plug.name,
+        type: plug.type,
+        ipAddress: plug.ipAddress,
+        port: plug.port,
+        deviceId: plug.deviceId,
+        isEnabled: plug.isEnabled,
+        hasCredentials: !!plug.credentials,
+        createdAt: plug.createdAt,
+      });
     } catch (error) {
       console.error("Failed to add smart plug:", error);
       res.status(500).json({ error: "Failed to add smart plug" });
@@ -1241,7 +1262,17 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Smart plug not found" });
       }
       
-      res.json(plug);
+      res.json({
+        id: plug.id,
+        name: plug.name,
+        type: plug.type,
+        ipAddress: plug.ipAddress,
+        port: plug.port,
+        deviceId: plug.deviceId,
+        isEnabled: plug.isEnabled,
+        hasCredentials: !!plug.credentials,
+        createdAt: plug.createdAt,
+      });
     } catch (error) {
       res.status(500).json({ error: "Failed to update smart plug" });
     }

@@ -9,7 +9,19 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { Plus, Trash2, Wifi, WifiOff, ArrowLeft, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Plug, Search, Loader2, Power, Home } from "lucide-react";
 import { useLocation } from "wouter";
-import type { Printer, SmartPlug } from "@shared/schema";
+import type { Printer } from "@shared/schema";
+
+interface SafeSmartPlug {
+  id: number;
+  name: string;
+  type: string;
+  ipAddress: string;
+  port: number | null;
+  deviceId: string | null;
+  isEnabled: boolean | null;
+  hasCredentials: boolean;
+  createdAt: Date | null;
+}
 
 interface DiscoveredDevice {
   name: string;
@@ -70,7 +82,7 @@ export default function Settings() {
     queryKey: ["/api/settings"],
   });
 
-  const { data: smartPlugs = [] } = useQuery<SmartPlug[]>({
+  const { data: smartPlugs = [] } = useQuery<SafeSmartPlug[]>({
     queryKey: ["/api/smart-plugs"],
   });
 

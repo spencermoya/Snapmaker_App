@@ -130,7 +130,7 @@ export default function Dashboard() {
     type: string;
     ipAddress: string;
     isEnabled: boolean | null;
-    credentials: string | null;
+    hasCredentials: boolean;
   }
 
   interface SmartPlugStatus {
@@ -142,7 +142,7 @@ export default function Dashboard() {
     queryKey: ["/api/smart-plugs"],
   });
 
-  const enabledPlug = smartPlugs.find(p => p.isEnabled && p.credentials);
+  const enabledPlug = smartPlugs.find(p => p.isEnabled && p.hasCredentials);
 
   const { data: plugStatus } = useQuery<SmartPlugStatus>({
     queryKey: ["/api/smart-plugs", enabledPlug?.id, "status"],
