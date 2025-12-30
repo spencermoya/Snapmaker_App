@@ -282,20 +282,34 @@ export default function Settings() {
     },
   });
 
+  const [scanError, setScanError] = useState<string | null>(null);
+
   const handleScanNetwork = async () => {
     setIsScanning(true);
     setDiscoveredDevices([]);
+    setScanError(null);
     try {
       const res = await fetch("/api/smart-plugs/discover");
-      const devices = await res.json();
+      const data = await res.json();
+      
+      if (!res.ok || !data.success) {
+        const errorDetails = data.details || data.error || "Unknown error";
+        setScanError(errorDetails);
+        toast.error(`Scan failed: ${errorDetails}`);
+        return;
+      }
+      
+      const devices = data.devices || [];
       setDiscoveredDevices(devices);
       if (devices.length === 0) {
         toast.info("No smart plugs found on the network");
       } else {
         toast.success(`Found ${devices.length} device(s)`);
       }
-    } catch {
-      toast.error("Network scan failed");
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Network scan failed";
+      setScanError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setIsScanning(false);
     }
@@ -816,23 +830,31 @@ export default function Settings() {
           )}
 
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={handleScanNetwork}
-                disabled={isScanning}
-                variant="outline"
-                data-testid="button-scan-network"
-              >
-                {isScanning ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Search className="h-4 w-4 mr-2" />
-                )}
-                {isScanning ? "Scanning..." : "Scan Network"}
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                Find smart plugs on your local network
-              </p>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={handleScanNetwork}
+                  disabled={isScanning}
+                  variant="outline"
+                  data-testid="button-scan-network"
+                >
+                  {isScanning ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Search className="h-4 w-4 mr-2" />
+                  )}
+                  {isScanning ? "Scanning..." : "Scan Network"}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Find HomeKit smart plugs on your local network
+                </p>
+              </div>
+              {scanError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                  <p className="text-sm font-medium text-red-400">Scan Error</p>
+                  <p className="text-xs text-muted-foreground font-mono break-all">{scanError}</p>
+                </div>
+              )}
             </div>
 
             {discoveredDevices.length > 0 && (

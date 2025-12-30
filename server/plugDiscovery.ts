@@ -105,10 +105,27 @@ export async function discoverMerossDevices(): Promise<DiscoveredDevice[]> {
 }
 
 export async function discoverAllDevices(): Promise<DiscoveredDevice[]> {
-  const [homekitDevices, merossDevices] = await Promise.all([
+  console.log("[Discovery] Starting network scan for smart plugs...");
+  
+  const results = await Promise.allSettled([
     discoverHomeKitDevices(),
     discoverMerossDevices(),
   ]);
+
+  const homekitResult = results[0];
+  const merossResult = results[1];
+
+  const homekitDevices = homekitResult.status === "fulfilled" ? homekitResult.value : [];
+  const merossDevices = merossResult.status === "fulfilled" ? merossResult.value : [];
+
+  if (homekitResult.status === "rejected") {
+    console.error("[Discovery] HomeKit scan failed:", homekitResult.reason);
+  }
+  if (merossResult.status === "rejected") {
+    console.error("[Discovery] Meross scan failed:", merossResult.reason);
+  }
+
+  console.log(`[Discovery] Found ${homekitDevices.length} HomeKit devices, ${merossDevices.length} Meross devices`);
 
   const allDevices = [...homekitDevices, ...merossDevices];
   

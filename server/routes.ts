@@ -1185,10 +1185,17 @@ export async function registerRoutes(
     try {
       const { discoverAllDevices } = await import("./plugDiscovery");
       const devices = await discoverAllDevices();
-      res.json(devices);
+      res.json({ success: true, devices });
     } catch (error) {
       console.error("Discovery error:", error);
-      res.status(500).json({ error: "Failed to discover devices" });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      res.status(500).json({ 
+        success: false,
+        error: "Failed to discover devices", 
+        details: errorMessage,
+        stack: errorStack,
+      });
     }
   });
 
