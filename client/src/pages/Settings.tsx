@@ -24,7 +24,7 @@ interface SafeSmartPlug {
 
 interface DiscoveredDevice {
   name: string;
-  type: "homekit";
+  type: "homekit" | "matter";
   ipAddress: string;
   port: number | null;
   deviceId: string | null;
@@ -822,23 +822,35 @@ export default function Settings() {
                     device.manufacturer,
                     device.model,
                   ].filter(Boolean).join(" ");
+                  const isMatter = device.type === "matter";
                   return (
                     <div
                       key={device.ipAddress}
-                      className="flex items-center gap-3 p-3 bg-green-500/10 border border-green-500/30 rounded-lg"
+                      className={`flex items-center gap-3 p-3 rounded-lg ${
+                        isMatter 
+                          ? "bg-blue-500/10 border border-blue-500/30" 
+                          : "bg-orange-500/10 border border-orange-500/30"
+                      }`}
                     >
-                      <Home className="h-5 w-5 text-orange-400" />
+                      <Home className={`h-5 w-5 ${isMatter ? "text-blue-400" : "text-orange-400"}`} />
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-sm font-medium truncate">{device.name}</p>
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${
+                            isMatter 
+                              ? "bg-blue-500/20 text-blue-400" 
+                              : "bg-orange-500/20 text-orange-400"
+                          }`}>
+                            {isMatter ? "Matter" : "HomeKit"}
+                          </span>
                           {device.category && (
-                            <span className="text-xs px-1.5 py-0.5 bg-orange-500/20 text-orange-400 rounded">
+                            <span className="text-xs px-1.5 py-0.5 bg-secondary text-muted-foreground rounded">
                               {device.category}
                             </span>
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground truncate">
-                          {deviceInfo || device.model || "HomeKit Device"} • {device.ipAddress}
+                          {deviceInfo || device.manufacturer || (isMatter ? "Thread/Matter" : "HomeKit")} • {device.ipAddress}
                         </p>
                       </div>
                       {alreadyAdded ? (
