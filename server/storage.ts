@@ -1,4 +1,4 @@
-import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, type PrintStat, type InsertPrintStat, printers, printJobs, dashboardPreferences, uploadedFiles, appSettings, printStats, DEFAULT_ENABLED_MODULES } from "@shared/schema";
+import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, type PrintStat, type InsertPrintStat, type SmartPlug, type InsertSmartPlug, printers, printJobs, dashboardPreferences, uploadedFiles, appSettings, printStats, smartPlugs, DEFAULT_ENABLED_MODULES } from "@shared/schema";
 import { sql } from "drizzle-orm";
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
@@ -21,6 +21,12 @@ export interface IStorage {
   addPrintStat(stat: InsertPrintStat): Promise<PrintStat>;
   getPrintStats(printerId: number): Promise<PrintStat[]>;
   getPrintStatsTotals(printerId: number): Promise<{ totalPrintTimeSeconds: number; totalFilamentUsedMm: number; totalPrints: number }>;
+  getSmartPlugs(): Promise<SmartPlug[]>;
+  getSmartPlug(id: number): Promise<SmartPlug | undefined>;
+  getEnabledSmartPlugs(): Promise<SmartPlug[]>;
+  addSmartPlug(plug: InsertSmartPlug): Promise<SmartPlug>;
+  updateSmartPlug(id: number, data: Partial<SmartPlug>): Promise<SmartPlug | undefined>;
+  deleteSmartPlug(id: number): Promise<boolean>;
 }
 
 export class DbStorage implements IStorage {
@@ -168,6 +174,34 @@ export class DbStorage implements IStorage {
       totalFilamentUsedMm: Number(result[0]?.totalFilamentUsedMm ?? 0),
       totalPrints: Number(result[0]?.totalPrints ?? 0),
     };
+  }
+
+  async getSmartPlugs(): Promise<SmartPlug[]> {
+    return await db.select().from(smartPlugs);
+  }
+
+  async getSmartPlug(id: number): Promise<SmartPlug | undefined> {
+    const result = await db.select().from(smartPlugs).where(eq(smartPlugs.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getEnabledSmartPlugs(): Promise<SmartPlug[]> {
+    return await db.select().from(smartPlugs).where(eq(smartPlugs.isEnabled, true));
+  }
+
+  async addSmartPlug(plug: InsertSmartPlug): Promise<SmartPlug> {
+    const result = await db.insert(smartPlugs).values(plug).returning();
+    return result[0]!;
+  }
+
+  async updateSmartPlug(id: number, data: Partial<SmartPlug>): Promise<SmartPlug | undefined> {
+    const result = await db.update(smartPlugs).set(data).where(eq(smartPlugs.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteSmartPlug(id: number): Promise<boolean> {
+    const result = await db.delete(smartPlugs).where(eq(smartPlugs.id, id)).returning();
+    return result.length > 0;
   }
 }
 

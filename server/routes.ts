@@ -1180,6 +1180,173 @@ export async function registerRoutes(
     }
   });
 
+  // Smart plug discovery and management endpoints
+  app.get("/api/smart-plugs/discover", async (req, res) => {
+    try {
+      const { discoverAllDevices } = await import("./plugDiscovery");
+      const devices = await discoverAllDevices();
+      res.json(devices);
+    } catch (error) {
+      console.error("Discovery error:", error);
+      res.status(500).json({ error: "Failed to discover devices" });
+    }
+  });
+
+  app.get("/api/smart-plugs", async (req, res) => {
+    try {
+      const plugs = await storage.getSmartPlugs();
+      res.json(plugs);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get smart plugs" });
+    }
+  });
+
+  app.post("/api/smart-plugs", async (req, res) => {
+    try {
+      const { name, type, ipAddress, port, deviceId, credentials } = req.body;
+      
+      if (!name || !type || !ipAddress) {
+        return res.status(400).json({ error: "name, type, and ipAddress are required" });
+      }
+
+      const plug = await storage.addSmartPlug({
+        name,
+        type,
+        ipAddress,
+        port: port || null,
+        deviceId: deviceId || null,
+        credentials: credentials || null,
+        isEnabled: true,
+      });
+      
+      res.json(plug);
+    } catch (error) {
+      console.error("Failed to add smart plug:", error);
+      res.status(500).json({ error: "Failed to add smart plug" });
+    }
+  });
+
+  app.put("/api/smart-plugs/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { name, credentials, isEnabled } = req.body;
+      
+      const updateData: Record<string, unknown> = {};
+      if (name !== undefined) updateData.name = name;
+      if (credentials !== undefined) updateData.credentials = credentials;
+      if (isEnabled !== undefined) updateData.isEnabled = isEnabled;
+      
+      const plug = await storage.updateSmartPlug(id, updateData);
+      if (!plug) {
+        return res.status(404).json({ error: "Smart plug not found" });
+      }
+      
+      res.json(plug);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update smart plug" });
+    }
+  });
+
+  app.delete("/api/smart-plugs/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteSmartPlug(id);
+      
+      if (!deleted) {
+        return res.status(404).json({ error: "Smart plug not found" });
+      }
+      
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete smart plug" });
+    }
+  });
+
+  app.post("/api/smart-plugs/:id/power", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { turnOn } = req.body;
+      
+      const plug = await storage.getSmartPlug(id);
+      if (!plug) {
+        return res.status(404).json({ error: "Smart plug not found" });
+      }
+
+      if (plug.type === "meross") {
+        if (!plug.credentials) {
+          return res.status(400).json({ error: "Meross device key not configured" });
+        }
+        
+        const { MerossSmartPlug } = await import("meross-local");
+        const merossPlug = new MerossSmartPlug(plug.ipAddress, plug.credentials);
+        
+        if (turnOn) {
+          await merossPlug.turnOn();
+        } else {
+          await merossPlug.turnOff();
+        }
+        
+        const isOn = await merossPlug.getPower();
+        res.json({ success: true, isOn, message: turnOn ? "Plug turned on" : "Plug turned off" });
+      } else if (plug.type === "homekit") {
+        res.status(501).json({ error: "HomeKit control requires native dependencies - run on Raspberry Pi" });
+      } else {
+        res.status(400).json({ error: "Unknown plug type" });
+      }
+    } catch (error) {
+      console.error("Failed to control plug:", error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to control plug" });
+    }
+  });
+
+  app.get("/api/smart-plugs/:id/status", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      
+      const plug = await storage.getSmartPlug(id);
+      if (!plug) {
+        return res.status(404).json({ error: "Smart plug not found" });
+      }
+
+      if (plug.type === "meross") {
+        if (!plug.credentials) {
+          return res.json({ isOn: false, reachable: false, error: "Device key not configured" });
+        }
+        
+        try {
+          const { MerossSmartPlug } = await import("meross-local");
+          const merossPlug = new MerossSmartPlug(plug.ipAddress, plug.credentials);
+          const isOn = await merossPlug.getPower();
+          res.json({ isOn, reachable: true });
+        } catch {
+          res.json({ isOn: false, reachable: false });
+        }
+      } else {
+        res.json({ isOn: false, reachable: false, error: "Unsupported plug type" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get plug status" });
+    }
+  });
+
+  app.post("/api/smart-plugs/test-meross", async (req, res) => {
+    try {
+      const { ipAddress, deviceKey } = req.body;
+      
+      if (!ipAddress || !deviceKey) {
+        return res.status(400).json({ error: "ipAddress and deviceKey are required" });
+      }
+
+      const { MerossSmartPlug } = await import("meross-local");
+      const plug = new MerossSmartPlug(ipAddress, deviceKey);
+      await plug.getState();
+      
+      res.json({ success: true });
+    } catch (error) {
+      res.json({ success: false, error: error instanceof Error ? error.message : "Connection failed" });
+    }
+  });
+
   // Initialize file watcher and Luban proxy on startup
   initializeWatcher().catch((err) => {
     console.error("Failed to initialize file watcher:", err);

@@ -53,6 +53,18 @@ export const printStats = pgTable("print_stats", {
   completedAt: timestamp("completed_at").defaultNow(),
 });
 
+export const smartPlugs = pgTable("smart_plugs", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  type: text("type").notNull(),
+  ipAddress: text("ip_address").notNull(),
+  port: integer("port"),
+  deviceId: text("device_id"),
+  credentials: text("credentials"),
+  isEnabled: boolean("is_enabled").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const insertPrinterSchema = createInsertSchema(printers).omit({
   id: true,
   lastSeen: true,
@@ -79,6 +91,11 @@ export const insertPrintStatSchema = createInsertSchema(printStats).omit({
   completedAt: true,
 });
 
+export const insertSmartPlugSchema = createInsertSchema(smartPlugs).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const DEFAULT_ENABLED_MODULES = [
   "status",
   "webcam", 
@@ -99,6 +116,8 @@ export type InsertUploadedFile = z.infer<typeof insertUploadedFileSchema>;
 export type AppSetting = typeof appSettings.$inferSelect;
 export type PrintStat = typeof printStats.$inferSelect;
 export type InsertPrintStat = z.infer<typeof insertPrintStatSchema>;
+export type SmartPlug = typeof smartPlugs.$inferSelect;
+export type InsertSmartPlug = z.infer<typeof insertSmartPlugSchema>;
 
 export type PrinterStatus = {
   state: string;
