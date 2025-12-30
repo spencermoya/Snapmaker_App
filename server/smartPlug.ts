@@ -1,83 +1,30 @@
-import { MerossSmartPlug } from "meross-local";
 import { storage } from "./storage";
 
-interface PlugSettings {
-  ipAddress: string | null;
-  deviceKey: string | null;
-  enabled: boolean;
+interface SmartPlugControl {
+  plugId: number;
+  turnOn: boolean;
 }
 
-export async function getPlugSettings(): Promise<PlugSettings> {
-  const [ipAddress, deviceKey, enabled] = await Promise.all([
-    storage.getSetting("plugIpAddress"),
-    storage.getSetting("plugDeviceKey"),
-    storage.getSetting("plugEnabled"),
-  ]);
+export async function controlSmartPlug(control: SmartPlugControl): Promise<{ success: boolean; isOn: boolean; error?: string }> {
+  const plug = await storage.getSmartPlug(control.plugId);
   
-  return {
-    ipAddress,
-    deviceKey,
-    enabled: enabled === "true",
-  };
-}
+  if (!plug) {
+    return { success: false, isOn: false, error: "Smart plug not found" };
+  }
+  
+  if (!plug.isEnabled) {
+    return { success: false, isOn: false, error: "Smart plug is disabled" };
+  }
 
-export async function savePlugSettings(settings: Partial<PlugSettings>): Promise<void> {
-  const promises: Promise<void>[] = [];
-  
-  if (settings.ipAddress !== undefined) {
-    promises.push(storage.setSetting("plugIpAddress", settings.ipAddress));
-  }
-  if (settings.deviceKey !== undefined) {
-    promises.push(storage.setSetting("plugDeviceKey", settings.deviceKey));
-  }
-  if (settings.enabled !== undefined) {
-    promises.push(storage.setSetting("plugEnabled", settings.enabled ? "true" : "false"));
-  }
-  
-  await Promise.all(promises);
-}
-
-export async function getPlugStatus(): Promise<{ isOn: boolean; reachable: boolean }> {
-  const settings = await getPlugSettings();
-  
-  if (!settings.enabled || !settings.ipAddress || !settings.deviceKey) {
-    return { isOn: false, reachable: false };
-  }
-  
   try {
-    const plug = new MerossSmartPlug(settings.ipAddress, settings.deviceKey);
-    const isOn = await plug.getPower();
-    return { isOn, reachable: true };
-  } catch (error) {
-    console.error("Failed to get plug status:", error);
-    return { isOn: false, reachable: false };
-  }
-}
-
-export async function setPlugPower(turnOn: boolean): Promise<{ success: boolean; isOn: boolean; error?: string }> {
-  const settings = await getPlugSettings();
-  
-  if (!settings.enabled) {
-    return { success: false, isOn: false, error: "Smart plug is not enabled" };
-  }
-  
-  if (!settings.ipAddress || !settings.deviceKey) {
-    return { success: false, isOn: false, error: "Smart plug not configured" };
-  }
-  
-  try {
-    const plug = new MerossSmartPlug(settings.ipAddress, settings.deviceKey);
-    
-    if (turnOn) {
-      await plug.turnOn();
-    } else {
-      await plug.turnOff();
+    if (plug.type === "homekit") {
+      const result = await controlHomeKitPlug(plug.ipAddress, plug.port || 80, control.turnOn);
+      return result;
     }
     
-    const isOn = await plug.getPower();
-    return { success: true, isOn };
+    return { success: false, isOn: false, error: `Unsupported plug type: ${plug.type}` };
   } catch (error) {
-    console.error("Failed to control plug:", error);
+    console.error("Failed to control smart plug:", error);
     return { 
       success: false, 
       isOn: false, 
@@ -86,15 +33,76 @@ export async function setPlugPower(turnOn: boolean): Promise<{ success: boolean;
   }
 }
 
-export async function testPlugConnection(ipAddress: string, deviceKey: string): Promise<{ success: boolean; error?: string }> {
+export async function getSmartPlugStatus(plugId: number): Promise<{ isOn: boolean; reachable: boolean }> {
+  const plug = await storage.getSmartPlug(plugId);
+  
+  if (!plug || !plug.isEnabled) {
+    return { isOn: false, reachable: false };
+  }
+
   try {
-    const plug = new MerossSmartPlug(ipAddress, deviceKey);
-    await plug.getState();
-    return { success: true };
+    if (plug.type === "homekit") {
+      const status = await getHomeKitPlugStatus(plug.ipAddress, plug.port || 80);
+      return status;
+    }
+    
+    return { isOn: false, reachable: false };
   } catch (error) {
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : "Failed to connect to plug" 
-    };
+    console.error("Failed to get plug status:", error);
+    return { isOn: false, reachable: false };
+  }
+}
+
+async function controlHomeKitPlug(ipAddress: string, port: number, turnOn: boolean): Promise<{ success: boolean; isOn: boolean; error?: string }> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    
+    const response = await fetch(`http://${ipAddress}:${port}/characteristics`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        characteristics: [{
+          aid: 1,
+          iid: 10,
+          value: turnOn
+        }]
+      }),
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeout);
+    
+    if (response.ok) {
+      return { success: true, isOn: turnOn };
+    }
+    
+    return { success: false, isOn: false, error: `HTTP ${response.status}` };
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      return { success: false, isOn: false, error: "Connection timeout" };
+    }
+    return { success: false, isOn: false, error: "HomeKit control requires pairing - use Home app" };
+  }
+}
+
+async function getHomeKitPlugStatus(ipAddress: string, port: number): Promise<{ isOn: boolean; reachable: boolean }> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    
+    const response = await fetch(`http://${ipAddress}:${port}/accessories`, {
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeout);
+    
+    if (response.ok) {
+      return { isOn: false, reachable: true };
+    }
+    
+    return { isOn: false, reachable: false };
+  } catch {
+    return { isOn: false, reachable: false };
   }
 }

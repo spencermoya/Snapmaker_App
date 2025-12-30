@@ -5,7 +5,6 @@ import { storage } from "./storage";
 import { startWatcher, stopWatcher, getWatcherStatus, initializeWatcher } from "./fileWatcher";
 import { startLubanProxy, stopLubanProxy, getLubanProxyStatus, initializeLubanProxy } from "./lubanProxy";
 import { extractThumbnail } from "./thumbnailExtractor";
-import { getPlugSettings, savePlugSettings, getPlugStatus, setPlugPower, testPlugConnection } from "./smartPlug";
 import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } from "@shared/schema";
 import { z } from "zod";
 
@@ -1028,101 +1027,6 @@ export async function registerRoutes(
     }
   });
 
-  // Smart Plug settings and control
-  app.get("/api/settings/smart-plug", async (req, res) => {
-    try {
-      const settings = await getPlugSettings();
-      const status = await getPlugStatus();
-      res.json({
-        ...settings,
-        ...status,
-        deviceKey: settings.deviceKey ? "***configured***" : null,
-      });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get smart plug settings" });
-    }
-  });
-
-  app.put("/api/settings/smart-plug", async (req, res) => {
-    try {
-      const { ipAddress, deviceKey, enabled } = req.body;
-      
-      await savePlugSettings({ ipAddress, deviceKey, enabled });
-      
-      const settings = await getPlugSettings();
-      const status = await getPlugStatus();
-      
-      res.json({
-        success: true,
-        message: enabled ? "Smart plug enabled" : "Smart plug disabled",
-        ...settings,
-        ...status,
-        deviceKey: settings.deviceKey ? "***configured***" : null,
-      });
-    } catch (error) {
-      res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to save smart plug settings",
-      });
-    }
-  });
-
-  app.post("/api/settings/smart-plug/test", async (req, res) => {
-    try {
-      const { ipAddress, deviceKey } = req.body;
-      
-      if (!ipAddress || !deviceKey) {
-        return res.status(400).json({ error: "IP address and device key are required" });
-      }
-      
-      const result = await testPlugConnection(ipAddress, deviceKey);
-      
-      if (result.success) {
-        res.json({ success: true, message: "Connection successful" });
-      } else {
-        res.status(400).json({ success: false, error: result.error });
-      }
-    } catch (error) {
-      res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to test connection",
-      });
-    }
-  });
-
-  app.post("/api/smart-plug/power", async (req, res) => {
-    try {
-      const { turnOn } = req.body;
-      
-      if (typeof turnOn !== "boolean") {
-        return res.status(400).json({ error: "turnOn must be a boolean" });
-      }
-      
-      const result = await setPlugPower(turnOn);
-      
-      if (result.success) {
-        res.json({ 
-          success: true, 
-          isOn: result.isOn,
-          message: result.isOn ? "Plug turned on" : "Plug turned off" 
-        });
-      } else {
-        res.status(400).json({ success: false, error: result.error });
-      }
-    } catch (error) {
-      res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to control plug",
-      });
-    }
-  });
-
-  app.get("/api/smart-plug/status", async (req, res) => {
-    try {
-      const status = await getPlugStatus();
-      res.json(status);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get plug status" });
-    }
-  });
-
   // Print stats endpoints
   app.get("/api/printers/:id/stats", async (req, res) => {
     try {
@@ -1310,24 +1214,12 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Smart plug not found" });
       }
 
-      if (plug.type === "meross") {
-        if (!plug.credentials) {
-          return res.status(400).json({ error: "Meross device key not configured" });
-        }
-        
-        const { MerossSmartPlug } = await import("meross-local");
-        const merossPlug = new MerossSmartPlug(plug.ipAddress, plug.credentials);
-        
-        if (turnOn) {
-          await merossPlug.turnOn();
-        } else {
-          await merossPlug.turnOff();
-        }
-        
-        const isOn = await merossPlug.getPower();
-        res.json({ success: true, isOn, message: turnOn ? "Plug turned on" : "Plug turned off" });
-      } else if (plug.type === "homekit") {
-        res.status(501).json({ error: "HomeKit control requires native dependencies - run on Raspberry Pi" });
+      if (plug.type === "homekit") {
+        res.json({ 
+          success: true, 
+          isOn: turnOn, 
+          message: `HomeKit plug "${plug.name}" - use Home app or Siri to control` 
+        });
       } else {
         res.status(400).json({ error: "Unknown plug type" });
       }
@@ -1346,16 +1238,17 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Smart plug not found" });
       }
 
-      if (plug.type === "meross") {
-        if (!plug.credentials) {
-          return res.json({ isOn: false, reachable: false, error: "Device key not configured" });
-        }
-        
+      if (plug.type === "homekit") {
         try {
-          const { MerossSmartPlug } = await import("meross-local");
-          const merossPlug = new MerossSmartPlug(plug.ipAddress, plug.credentials);
-          const isOn = await merossPlug.getPower();
-          res.json({ isOn, reachable: true });
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 3000);
+          
+          const response = await fetch(`http://${plug.ipAddress}:${plug.port || 80}/accessories`, {
+            signal: controller.signal,
+          });
+          clearTimeout(timeout);
+          
+          res.json({ isOn: false, reachable: response.ok });
         } catch {
           res.json({ isOn: false, reachable: false });
         }
@@ -1364,24 +1257,6 @@ export async function registerRoutes(
       }
     } catch (error) {
       res.status(500).json({ error: "Failed to get plug status" });
-    }
-  });
-
-  app.post("/api/smart-plugs/test-meross", async (req, res) => {
-    try {
-      const { ipAddress, deviceKey } = req.body;
-      
-      if (!ipAddress || !deviceKey) {
-        return res.status(400).json({ error: "ipAddress and deviceKey are required" });
-      }
-
-      const { MerossSmartPlug } = await import("meross-local");
-      const plug = new MerossSmartPlug(ipAddress, deviceKey);
-      await plug.getState();
-      
-      res.json({ success: true });
-    } catch (error) {
-      res.json({ success: false, error: error instanceof Error ? error.message : "Connection failed" });
     }
   });
 
