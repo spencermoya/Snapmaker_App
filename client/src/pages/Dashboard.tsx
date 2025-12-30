@@ -124,19 +124,41 @@ export default function Dashboard() {
   const [lightOn, setLightOn] = useState(false);
   const [fanOn, setFanOn] = useState(false);
 
+  interface SmartPlug {
+    id: number;
+    name: string;
+    type: string;
+    ipAddress: string;
+    isEnabled: boolean | null;
+    credentials: string | null;
+  }
+
   interface SmartPlugStatus {
     isOn: boolean;
     reachable: boolean;
   }
 
+  const { data: smartPlugs = [] } = useQuery<SmartPlug[]>({
+    queryKey: ["/api/smart-plugs"],
+  });
+
+  const enabledPlug = smartPlugs.find(p => p.isEnabled && p.credentials);
+
   const { data: plugStatus } = useQuery<SmartPlugStatus>({
-    queryKey: ["/api/smart-plug/status"],
+    queryKey: ["/api/smart-plugs", enabledPlug?.id, "status"],
+    queryFn: async () => {
+      if (!enabledPlug) return { isOn: false, reachable: false };
+      const res = await fetch(`/api/smart-plugs/${enabledPlug.id}/status`);
+      return res.json();
+    },
+    enabled: !!enabledPlug,
     refetchInterval: 10000,
   });
 
   const plugPowerMutation = useMutation({
     mutationFn: async (turnOn: boolean) => {
-      const res = await fetch("/api/smart-plug/power", {
+      if (!enabledPlug) throw new Error("No smart plug configured");
+      const res = await fetch(`/api/smart-plugs/${enabledPlug.id}/power`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ turnOn }),
@@ -148,7 +170,7 @@ export default function Dashboard() {
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/smart-plug/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/smart-plugs", enabledPlug?.id, "status"] });
       toast.success(data.message);
     },
     onError: (error: Error) => {
@@ -729,15 +751,15 @@ export default function Dashboard() {
               </div>
               
               <div className="flex gap-3">
-                {plugStatus?.reachable && (
+                {enabledPlug && (
                   <Button
                     variant="outline"
                     size="icon"
-                    className={`${plugStatus?.isOn ? 'text-green-500 border-green-500/50' : 'text-muted-foreground'} hover:text-foreground`}
+                    className={`${plugStatus?.isOn ? 'text-green-500 border-green-500/50' : plugStatus?.reachable === false ? 'text-red-500/50 border-red-500/30' : 'text-muted-foreground'} hover:text-foreground`}
                     onClick={() => plugPowerMutation.mutate(!plugStatus?.isOn)}
-                    disabled={plugPowerMutation.isPending}
+                    disabled={plugPowerMutation.isPending || !plugStatus?.reachable}
                     data-testid="button-plug-power"
-                    title={plugStatus?.isOn ? "Turn off smart plug" : "Turn on smart plug"}
+                    title={plugStatus?.reachable === false ? "Smart plug not reachable" : plugStatus?.isOn ? "Turn off smart plug" : "Turn on smart plug"}
                   >
                     <Plug className="h-4 w-4" />
                   </Button>
