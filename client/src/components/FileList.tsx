@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { FileCode, Play, RefreshCw, Upload, Trash2, Info, AlertCircle, X, Calendar, FolderInput, Clock } from "lucide-react";
+import { FileCode, Play, RefreshCw, Upload, Trash2, Info, AlertCircle, X, Calendar, FolderInput, Clock, Download } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useState, useRef, useCallback, useMemo } from "react";
@@ -153,6 +153,21 @@ export default function FileList({ printerId }: FileListProps) {
       printMutation.mutate(previewFile.id);
     }
   }, [previewFile, printMutation]);
+
+  const handleDownload = useCallback(() => {
+    if (previewFile?.fileContent) {
+      const blob = new Blob([previewFile.fileContent], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = previewFile.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Download started");
+    }
+  }, [previewFile]);
 
   const formatDate = (dateString: string) => {
     try {
@@ -532,15 +547,27 @@ export default function FileList({ printerId }: FileListProps) {
               <X className="h-4 w-4 mr-2" />
               Close
             </Button>
-            <Button
-              onClick={handleStartPrint}
-              disabled={printMutation.isPending || !previewFile?.fileContent}
-              className="flex-1 sm:flex-none"
-              data-testid="button-start-print"
-            >
-              <Play className="h-4 w-4 mr-2" />
-              {printMutation.isPending ? "Starting..." : "Start Print"}
-            </Button>
+            <div className="flex gap-2 flex-1 sm:flex-none">
+              <Button
+                variant="secondary"
+                onClick={handleDownload}
+                disabled={!previewFile?.fileContent}
+                className="flex-1"
+                data-testid="button-download-file"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download
+              </Button>
+              <Button
+                onClick={handleStartPrint}
+                disabled={printMutation.isPending || !previewFile?.fileContent}
+                className="flex-1"
+                data-testid="button-start-print"
+              >
+                <Play className="h-4 w-4 mr-2" />
+                {printMutation.isPending ? "Starting..." : "Print"}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
