@@ -19,7 +19,6 @@ interface SafeSmartPlug {
   port: number | null;
   deviceId: string | null;
   isEnabled: boolean | null;
-  hasCredentials: boolean;
   createdAt: Date | null;
 }
 

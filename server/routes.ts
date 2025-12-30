@@ -1114,7 +1114,6 @@ export async function registerRoutes(
         port: plug.port,
         deviceId: plug.deviceId,
         isEnabled: plug.isEnabled,
-        hasCredentials: !!plug.credentials,
         createdAt: plug.createdAt,
       }));
       res.json(safePlugs);
@@ -1149,7 +1148,6 @@ export async function registerRoutes(
         port: plug.port,
         deviceId: plug.deviceId,
         isEnabled: plug.isEnabled,
-        hasCredentials: !!plug.credentials,
         createdAt: plug.createdAt,
       });
     } catch (error) {
@@ -1181,7 +1179,6 @@ export async function registerRoutes(
         port: plug.port,
         deviceId: plug.deviceId,
         isEnabled: plug.isEnabled,
-        hasCredentials: !!plug.credentials,
         createdAt: plug.createdAt,
       });
     } catch (error) {
