@@ -25,7 +25,7 @@ interface SafeSmartPlug {
 
 interface DiscoveredDevice {
   name: string;
-  type: "meross" | "homekit" | "unknown";
+  type: "homekit";
   ipAddress: string;
   port: number | null;
   deviceId: string | null;
@@ -52,7 +52,6 @@ interface SettingsData {
 
 interface SmartPlugSettings {
   ipAddress: string | null;
-  deviceKey: string | null;
   enabled: boolean;
   isOn: boolean;
   reachable: boolean;
@@ -67,10 +66,7 @@ export default function Settings() {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [discoveredDevices, setDiscoveredDevices] = useState<DiscoveredDevice[]>([]);
-  const [addingDeviceIp, setAddingDeviceIp] = useState<string | null>(null);
-  const [deviceKey, setDeviceKey] = useState("");
   const [manualPlugIp, setManualPlugIp] = useState("");
-  const [manualPlugKey, setManualPlugKey] = useState("");
   const [manualPlugName, setManualPlugName] = useState("");
   const queryClient = useQueryClient();
 
@@ -203,7 +199,7 @@ export default function Settings() {
   });
 
   const addSmartPlugMutation = useMutation({
-    mutationFn: async (data: { name: string; type: string; ipAddress: string; credentials?: string }) => {
+    mutationFn: async (data: { name: string; type: string; ipAddress: string; port?: number }) => {
       const res = await fetch("/api/smart-plugs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -218,10 +214,7 @@ export default function Settings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/smart-plugs"] });
       toast.success("Smart plug added");
-      setAddingDeviceIp(null);
-      setDeviceKey("");
       setManualPlugIp("");
-      setManualPlugKey("");
       setManualPlugName("");
     },
     onError: (error: Error) => {
@@ -261,27 +254,6 @@ export default function Settings() {
     },
   });
 
-  const testSmartPlugMutation = useMutation({
-    mutationFn: async (data: { ipAddress: string; deviceKey: string }) => {
-      const res = await fetch("/api/smart-plugs/test-meross", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      return res.json();
-    },
-    onSuccess: (data) => {
-      if (data.success) {
-        toast.success("Connection successful!");
-      } else {
-        toast.error(data.error || "Connection failed");
-      }
-    },
-    onError: () => {
-      toast.error("Failed to test connection");
-    },
-  });
-
   const [scanError, setScanError] = useState<string | null>(null);
 
   const handleScanNetwork = async () => {
@@ -316,36 +288,23 @@ export default function Settings() {
   };
 
   const handleAddDiscoveredDevice = (device: DiscoveredDevice) => {
-    if (device.type === "meross") {
-      setAddingDeviceIp(device.ipAddress);
-      setDeviceKey("");
-    } else if (device.type === "homekit") {
-      toast.info("HomeKit devices require setup on your Raspberry Pi");
-    }
-  };
-
-  const handleConfirmAddDevice = () => {
-    const device = discoveredDevices.find(d => d.ipAddress === addingDeviceIp);
-    if (!device) return;
-    
     addSmartPlugMutation.mutate({
       name: device.name,
-      type: device.type,
+      type: "homekit",
       ipAddress: device.ipAddress,
-      credentials: deviceKey || undefined,
+      port: device.port || 80,
     });
   };
 
   const handleAddManualPlug = () => {
-    if (!manualPlugIp.trim() || !manualPlugKey.trim()) {
-      toast.error("Please enter IP address and device key");
+    if (!manualPlugIp.trim()) {
+      toast.error("Please enter the IP address");
       return;
     }
     addSmartPlugMutation.mutate({
-      name: manualPlugName.trim() || "Meross Plug",
-      type: "meross",
+      name: manualPlugName.trim() || "HomeKit Plug",
+      type: "homekit",
       ipAddress: manualPlugIp.trim(),
-      credentials: manualPlugKey.trim(),
     });
   };
 
@@ -786,7 +745,7 @@ export default function Settings() {
             <h2 className="text-lg font-semibold">Smart Plug Control</h2>
           </div>
           <p className="text-sm text-muted-foreground mb-4">
-            Control smart plugs to power your printer on/off. Supports Meross and HomeKit devices.
+            Control HomeKit-enabled smart plugs to power your printer on/off.
           </p>
 
           {smartPlugs.length > 0 && (
@@ -798,11 +757,7 @@ export default function Settings() {
                   className="flex items-center gap-3 p-3 bg-secondary/30 border border-border rounded-lg"
                   data-testid={`card-plug-${plug.id}`}
                 >
-                  {plug.type === "meross" ? (
-                    <Plug className="h-5 w-5 text-blue-400" />
-                  ) : (
-                    <Home className="h-5 w-5 text-orange-400" />
-                  )}
+                  <Home className="h-5 w-5 text-orange-400" />
                   <div className="flex-1">
                     <p className="text-sm font-medium">{plug.name}</p>
                     <p className="text-xs text-muted-foreground">
@@ -867,13 +822,7 @@ export default function Settings() {
                       key={device.ipAddress}
                       className="flex items-center gap-3 p-3 bg-green-500/10 border border-green-500/30 rounded-lg"
                     >
-                      {device.type === "meross" ? (
-                        <Plug className="h-5 w-5 text-blue-400" />
-                      ) : device.type === "homekit" ? (
-                        <Home className="h-5 w-5 text-orange-400" />
-                      ) : (
-                        <Power className="h-5 w-5 text-gray-400" />
-                      )}
+                      <Home className="h-5 w-5 text-orange-400" />
                       <div className="flex-1">
                         <p className="text-sm font-medium">{device.name}</p>
                         <p className="text-xs text-muted-foreground">
@@ -883,37 +832,12 @@ export default function Settings() {
                       </div>
                       {alreadyAdded ? (
                         <span className="text-xs text-green-500">Added</span>
-                      ) : addingDeviceIp === device.ipAddress ? (
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="password"
-                            placeholder="Device key"
-                            value={deviceKey}
-                            onChange={(e) => setDeviceKey(e.target.value)}
-                            className="w-32 h-8 text-xs"
-                            data-testid="input-device-key"
-                          />
-                          <Button
-                            size="sm"
-                            onClick={handleConfirmAddDevice}
-                            disabled={addSmartPlugMutation.isPending}
-                            data-testid="button-confirm-add"
-                          >
-                            Add
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setAddingDeviceIp(null)}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
                       ) : (
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => handleAddDiscoveredDevice(device)}
+                          disabled={addSmartPlugMutation.isPending}
                           data-testid={`button-add-device-${device.ipAddress}`}
                         >
                           <Plus className="h-4 w-4 mr-1" />
@@ -930,6 +854,9 @@ export default function Settings() {
 
             <div className="space-y-4">
               <h3 className="text-sm font-medium">Add Manually</h3>
+              <p className="text-xs text-muted-foreground">
+                If your HomeKit smart plug wasn't discovered, you can add it manually.
+              </p>
               <div className="grid gap-3">
                 <div className="grid gap-2">
                   <Label htmlFor="manual-plug-name">Name (optional)</Label>
@@ -951,53 +878,14 @@ export default function Settings() {
                     data-testid="input-manual-plug-ip"
                   />
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="manual-plug-key">Device Key</Label>
-                  <Input
-                    id="manual-plug-key"
-                    type="password"
-                    placeholder="Your Meross device key"
-                    value={manualPlugKey}
-                    onChange={(e) => setManualPlugKey(e.target.value)}
-                    data-testid="input-manual-plug-key"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      if (!manualPlugIp.trim() || !manualPlugKey.trim()) {
-                        toast.error("Please enter IP and device key");
-                        return;
-                      }
-                      testSmartPlugMutation.mutate({ 
-                        ipAddress: manualPlugIp, 
-                        deviceKey: manualPlugKey 
-                      });
-                    }}
-                    disabled={testSmartPlugMutation.isPending}
-                    data-testid="button-test-manual-plug"
-                  >
-                    Test Connection
-                  </Button>
-                  <Button
-                    onClick={handleAddManualPlug}
-                    disabled={addSmartPlugMutation.isPending}
-                    data-testid="button-add-manual-plug"
-                  >
-                    <Plug className="h-4 w-4 mr-2" />
-                    Add Plug
-                  </Button>
-                </div>
-              </div>
-
-              <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                <h3 className="font-medium text-sm mb-2 text-blue-400">How to Get Your Device Key</h3>
-                <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-                  <li>Install the tool: <code className="bg-muted px-1 rounded">npm install -g meross-login</code></li>
-                  <li>Run <code className="bg-muted px-1 rounded">meross-login</code> and enter your Meross credentials</li>
-                  <li>Copy the <code className="bg-muted px-1 rounded">key</code> value from the output</li>
-                </ol>
+                <Button
+                  onClick={handleAddManualPlug}
+                  disabled={addSmartPlugMutation.isPending}
+                  data-testid="button-add-manual-plug"
+                >
+                  <Home className="h-4 w-4 mr-2" />
+                  Add HomeKit Plug
+                </Button>
               </div>
             </div>
           </div>
