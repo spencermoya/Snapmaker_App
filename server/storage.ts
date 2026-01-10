@@ -1,7 +1,7 @@
-import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, type PrintStat, type InsertPrintStat, type SmartPlug, type InsertSmartPlug, type PushSubscription, type InsertPushSubscription, printers, printJobs, dashboardPreferences, uploadedFiles, appSettings, printStats, smartPlugs, pushSubscriptions, DEFAULT_ENABLED_MODULES } from "@shared/schema";
+import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, type PrintStat, type InsertPrintStat, type SmartPlug, type InsertSmartPlug, type PushSubscription, type InsertPushSubscription, type ScheduledPrint, type InsertScheduledPrint, printers, printJobs, dashboardPreferences, uploadedFiles, appSettings, printStats, smartPlugs, pushSubscriptions, scheduledPrints, DEFAULT_ENABLED_MODULES } from "@shared/schema";
 import { sql } from "drizzle-orm";
 import { db } from "./db";
-import { eq, and, gte, desc } from "drizzle-orm";
+import { eq, and, gte, desc, lte } from "drizzle-orm";
 
 export interface IStorage {
   getPrinter(id: number): Promise<Printer | undefined>;
@@ -33,6 +33,16 @@ export interface IStorage {
   addPushSubscription(sub: InsertPushSubscription): Promise<PushSubscription>;
   deletePushSubscription(endpoint: string): Promise<boolean>;
   deletePushSubscriptionsByPrinter(printerId: number): Promise<void>;
+  
+  getUploadedFileById(id: number): Promise<UploadedFile | undefined>;
+  updatePrinterConnection(id: number, isConnected: boolean, token?: string | null): Promise<void>;
+  
+  createScheduledPrint(payload: InsertScheduledPrint): Promise<ScheduledPrint>;
+  getScheduledPrint(id: number): Promise<ScheduledPrint | undefined>;
+  getScheduledPrints(printerId?: number): Promise<ScheduledPrint[]>;
+  getPendingScheduledPrints(): Promise<ScheduledPrint[]>;
+  updateScheduledPrintStatus(id: number, status: string, executedAt?: Date | null, errorMessage?: string | null): Promise<ScheduledPrint | undefined>;
+  deleteScheduledPrint(id: number): Promise<boolean>;
 }
 
 export class DbStorage implements IStorage {
@@ -277,6 +287,88 @@ export class DbStorage implements IStorage {
 
   async deletePushSubscriptionsByPrinter(printerId: number): Promise<void> {
     await db.delete(pushSubscriptions).where(eq(pushSubscriptions.printerId, printerId));
+  }
+
+  async getUploadedFileById(id: number): Promise<UploadedFile | undefined> {
+    const result = await db
+      .select()
+      .from(uploadedFiles)
+      .where(eq(uploadedFiles.id, id))
+      .limit(1);
+    return result[0];
+  }
+
+  async updatePrinterConnection(id: number, isConnected: boolean, token?: string | null): Promise<void> {
+    const updateData: Partial<Printer> = { isConnected, lastSeen: new Date() };
+    if (token !== undefined) {
+      updateData.token = token;
+    }
+    await db.update(printers).set(updateData).where(eq(printers.id, id));
+  }
+
+  async createScheduledPrint(payload: InsertScheduledPrint): Promise<ScheduledPrint> {
+    const result = await db.insert(scheduledPrints).values(payload).returning();
+    return result[0]!;
+  }
+
+  async getScheduledPrint(id: number): Promise<ScheduledPrint | undefined> {
+    const result = await db
+      .select()
+      .from(scheduledPrints)
+      .where(eq(scheduledPrints.id, id))
+      .limit(1);
+    return result[0];
+  }
+
+  async getScheduledPrints(printerId?: number): Promise<ScheduledPrint[]> {
+    if (printerId) {
+      return await db
+        .select()
+        .from(scheduledPrints)
+        .where(eq(scheduledPrints.printerId, printerId))
+        .orderBy(desc(scheduledPrints.scheduledTime));
+    }
+    return await db
+      .select()
+      .from(scheduledPrints)
+      .orderBy(desc(scheduledPrints.scheduledTime));
+  }
+
+  async getPendingScheduledPrints(): Promise<ScheduledPrint[]> {
+    return await db
+      .select()
+      .from(scheduledPrints)
+      .where(eq(scheduledPrints.status, "pending"))
+      .orderBy(scheduledPrints.scheduledTime);
+  }
+
+  async updateScheduledPrintStatus(
+    id: number, 
+    status: string, 
+    executedAt?: Date | null, 
+    errorMessage?: string | null
+  ): Promise<ScheduledPrint | undefined> {
+    const updateData: Partial<ScheduledPrint> = { status };
+    if (executedAt !== undefined) {
+      updateData.executedAt = executedAt;
+    }
+    if (errorMessage !== undefined) {
+      updateData.errorMessage = errorMessage;
+    }
+    const result = await db
+      .update(scheduledPrints)
+      .set(updateData)
+      .where(eq(scheduledPrints.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteScheduledPrint(id: number): Promise<boolean> {
+    const result = await db
+      .delete(scheduledPrints)
+      .where(eq(scheduledPrints.id, id))
+      .returning();
+    return result.length > 0;
   }
 }
 

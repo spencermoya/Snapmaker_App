@@ -82,28 +82,45 @@ export function useWebPush(printerId: number | undefined) {
 
     try {
       setStatus("loading");
+      console.log("[WebPush] Starting subscription flow...");
 
+      // Step 1: Request permission
+      console.log("[WebPush] Requesting notification permission...");
       const permission = await Notification.requestPermission();
+      console.log("[WebPush] Permission result:", permission);
       if (permission !== "granted") {
         setStatus("permission_denied");
+        setDebugInfo("Permission denied. On iOS: Settings > Notifications > [App Name]");
         return false;
       }
 
+      // Step 2: Get VAPID key
+      console.log("[WebPush] Fetching VAPID public key...");
       const vapidResponse = await fetch("/api/push/vapid-public-key");
       if (!vapidResponse.ok) {
-        throw new Error("Failed to get VAPID key");
+        const errData = await vapidResponse.json().catch(() => ({}));
+        throw new Error(errData.error || `VAPID key request failed: ${vapidResponse.status}`);
       }
       const { publicKey } = await vapidResponse.json();
+      console.log("[WebPush] Got VAPID key:", publicKey?.substring(0, 20) + "...");
 
+      // Step 3: Wait for service worker
+      console.log("[WebPush] Waiting for service worker...");
       const registration = await navigator.serviceWorker.ready;
+      console.log("[WebPush] Service worker ready, scope:", registration.scope);
       
+      // Step 4: Subscribe to push
+      console.log("[WebPush] Subscribing to push manager...");
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey),
       });
+      console.log("[WebPush] Push subscription created");
 
       const subJson = subscription.toJSON();
       
+      // Step 5: Save to server
+      console.log("[WebPush] Saving subscription to server...");
       const saveResponse = await fetch(`/api/printers/${printerId}/push-subscription`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -114,16 +131,21 @@ export function useWebPush(printerId: number | undefined) {
       });
 
       if (!saveResponse.ok) {
-        throw new Error("Failed to save subscription");
+        const errData = await saveResponse.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to save subscription");
       }
 
+      console.log("[WebPush] Subscription saved successfully!");
       setStatus("subscribed");
       setError(null);
+      setDebugInfo(null);
       return true;
     } catch (err) {
-      console.error("Failed to subscribe:", err);
+      console.error("[WebPush] Subscription failed:", err);
       setStatus("error");
-      setError(err instanceof Error ? err.message : "Failed to enable notifications");
+      const msg = err instanceof Error ? err.message : "Failed to enable notifications";
+      setError(msg);
+      setDebugInfo(`Error: ${msg}. Check console for details.`);
       return false;
     }
   }, [printerId]);

@@ -7,6 +7,7 @@ import JogControls from "@/components/JogControls";
 import FileList from "@/components/FileList";
 import PrintStatsPanel from "@/components/PrintStats";
 import WebcamFeed from "@/components/WebcamFeed";
+import ScheduledPrintsPanel from "@/components/ScheduledPrintsPanel";
 import NotificationToggle from "@/components/NotificationToggle";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useAdaptivePolling, useVisibility } from "@/hooks/useAdaptivePolling";
@@ -35,6 +36,7 @@ const MODULE_REGISTRY: ModuleConfig[] = [
   { id: "jogControls", title: "Jog Controls", column: "right" },
   { id: "jobControls", title: "Job Controls", column: "right" },
   { id: "fileList", title: "File List", column: "right" },
+  { id: "scheduledPrints", title: "Scheduled Prints", column: "right" },
   { id: "stats", title: "Print Stats", column: "right" },
 ];
 
@@ -613,6 +615,8 @@ export default function Dashboard() {
         );
       case "fileList":
         return <FileList key={moduleId} printerId={selectedPrinter.id} />;
+      case "scheduledPrints":
+        return <ScheduledPrintsPanel key={moduleId} printerId={selectedPrinter.id} />;
       case "stats":
         return <PrintStatsPanel key={moduleId} printerId={selectedPrinter.id} />;
       default:
@@ -860,6 +864,7 @@ export default function Dashboard() {
                   {renderModule("jogControls")}
                   {renderModule("jobControls")}
                   {renderModule("fileList")}
+                  {renderModule("scheduledPrints")}
                   {renderModule("stats")}
                 </div>
               )}

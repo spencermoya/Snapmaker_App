@@ -78,6 +78,7 @@ shared/           # Shared code between frontend/backend
 - **Browser notifications**: Get real-time notifications when prints start or complete (uses SSE for active tabs)
 - **Web Push notifications**: Background push notifications that work even when the app is closed or phone is locked. Requires installing the PWA to home screen (iOS 16.4+). Uses VAPID keys stored in database.
 - **File list sorting**: Uploaded files are sorted with newest files at the top
+- **Scheduled prints**: Schedule prints to start at a specific date/time. Click the calendar icon on any file to schedule it. Supports optional smart plug control with configurable warmup time (default 2 min). Uses `server/scheduler.ts` which checks every 30 seconds for pending jobs.
 
 ### UI Libraries
 - **Radix UI**: Headless component primitives for accessibility
