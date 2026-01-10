@@ -2,7 +2,7 @@ import { storage } from "./storage";
 import { sendNotification } from "./notifications";
 import { sendPushNotification } from "./webPush";
 
-const POLL_INTERVAL_MS = 30000;
+const POLL_INTERVAL_MS = 5000;
 const SNAPMAKER_PORT = 8080;
 
 interface PrinterState {

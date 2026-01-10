@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Clock, Timer, Activity } from "lucide-react";
+import { useRealtimeTimer } from "@/hooks/useRealtimeTimer";
 
 interface PrinterStatusProps {
   status: "idle" | "printing" | "paused" | "error";
@@ -28,6 +29,13 @@ export default function PrinterStatus({
   totalLines,
   filename 
 }: PrinterStatusProps) {
+  const isActive = status === "printing";
+  
+  const { displayElapsedSeconds, displayRemainingSeconds } = useRealtimeTimer({
+    elapsedTimeSeconds,
+    timeRemainingSeconds,
+    isActive,
+  });
   const getStatusColor = (s: string) => {
     switch (s) {
       case "printing": return "bg-green-500 hover:bg-green-600";
@@ -38,12 +46,25 @@ export default function PrinterStatus({
   };
 
   const calculateETA = (): string => {
-    if (!timeRemainingSeconds || timeRemainingSeconds <= 0) {
+    if (!displayRemainingSeconds || displayRemainingSeconds <= 0) {
       return "--:--";
     }
     const now = new Date();
-    const eta = new Date(now.getTime() + timeRemainingSeconds * 1000);
+    const eta = new Date(now.getTime() + displayRemainingSeconds * 1000);
     return eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const formatTimeRemaining = (seconds: number): string => {
+    if (!seconds || seconds <= 0) return "--:--";
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${secs}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${secs}s`;
+    }
+    return `${secs}s`;
   };
 
   const formatElapsedTime = (seconds: number): string => {
@@ -95,7 +116,11 @@ export default function PrinterStatus({
               <span className="text-xs text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                 <Clock className="h-3 w-3" /> Time Left
               </span>
-              <span className="text-xl font-mono" data-testid="text-time-left">{timeLeft}</span>
+              <span className="text-xl font-mono" data-testid="text-time-left">
+                {isActive && displayRemainingSeconds > 0 
+                  ? formatTimeRemaining(displayRemainingSeconds) 
+                  : timeLeft}
+              </span>
             </div>
             <div className="flex flex-col space-y-1">
               <span className="text-xs text-muted-foreground uppercase tracking-wider flex items-center gap-1">
@@ -104,12 +129,12 @@ export default function PrinterStatus({
               <span className="text-xl font-mono text-muted-foreground" data-testid="text-eta">{calculateETA()}</span>
             </div>
           </div>
-          {(elapsedTime || elapsedTimeSeconds) && (
+          {(elapsedTime || elapsedTimeSeconds || isActive) && (
             <div className="pt-4 border-t border-border/50">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Elapsed</span>
                 <span className="font-mono" data-testid="text-elapsed">
-                  {elapsedTime || (elapsedTimeSeconds ? formatElapsedTime(elapsedTimeSeconds) : "Unknown")}
+                  {isActive ? formatElapsedTime(displayElapsedSeconds) : (elapsedTime || (elapsedTimeSeconds ? formatElapsedTime(elapsedTimeSeconds) : "Unknown"))}
                 </span>
               </div>
               {totalPrintTime && totalPrintTime > 0 && (
