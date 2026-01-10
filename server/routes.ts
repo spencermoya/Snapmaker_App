@@ -7,6 +7,7 @@ import { startLubanProxy, stopLubanProxy, getLubanProxyStatus, initializeLubanPr
 import { extractThumbnail } from "./thumbnailExtractor";
 import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } from "@shared/schema";
 import { z } from "zod";
+import { addNotificationClient } from "./notifications";
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -68,6 +69,26 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
+  app.get("/api/printers/:id/notifications", async (req, res) => {
+    const printerId = parseInt(req.params.id);
+    if (isNaN(printerId)) {
+      return res.status(400).json({ error: "Invalid printer ID" });
+    }
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    
+    res.write(`data: ${JSON.stringify({ type: "connected", printerId })}\n\n`);
+    
+    addNotificationClient(printerId, res);
+    
+    req.on("close", () => {
+      res.end();
+    });
+  });
+
   app.get("/api/printers", async (req, res) => {
     try {
       const printers = await storage.getAllPrinters();

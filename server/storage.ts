@@ -98,7 +98,8 @@ export class DbStorage implements IStorage {
     return await db
       .select()
       .from(uploadedFiles)
-      .where(eq(uploadedFiles.printerId, printerId));
+      .where(eq(uploadedFiles.printerId, printerId))
+      .orderBy(desc(uploadedFiles.uploadedAt));
   }
 
   async getUploadedFile(id: number, printerId: number): Promise<UploadedFile | undefined> {

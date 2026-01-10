@@ -7,6 +7,8 @@ import JogControls from "@/components/JogControls";
 import FileList from "@/components/FileList";
 import PrintStatsPanel from "@/components/PrintStats";
 import WebcamFeed from "@/components/WebcamFeed";
+import NotificationToggle from "@/components/NotificationToggle";
+import { useNotifications } from "@/hooks/useNotifications";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -189,6 +191,8 @@ export default function Dashboard() {
   const selectedPrinter = activePrinter || printers[0];
   const isConnected = !!activePrinter;
   const disconnectedPrinter = printers.find((p) => !p.isConnected && p.token);
+
+  useNotifications(selectedPrinter?.id);
 
   const { data: preferencesData, isLoading: preferencesLoading } = useQuery<{ enabledModules: string[] }>({
     queryKey: [`/api/printers/${selectedPrinter?.id}/dashboard-preferences`],
@@ -621,6 +625,9 @@ export default function Dashboard() {
     >
       {/* Fixed Buttons - Top Right */}
       <div className="fixed top-4 right-4 z-40 flex gap-2">
+        <div className="bg-background/80 backdrop-blur-sm rounded-md border">
+          <NotificationToggle />
+        </div>
         <Button
           variant="outline"
           size="icon"

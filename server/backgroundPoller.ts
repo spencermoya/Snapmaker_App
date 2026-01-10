@@ -1,4 +1,5 @@
 import { storage } from "./storage";
+import { sendNotification } from "./notifications";
 
 const POLL_INTERVAL_MS = 30000;
 const SNAPMAKER_PORT = 8080;
@@ -101,6 +102,13 @@ async function pollPrinter(printerId: number, ipAddress: string, token: string):
       printerState.currentFilename = currentFile;
       printerState.isTracking = true;
       printerState.lastProgress = progress;
+      
+      sendNotification({
+        type: "print_started",
+        printerId,
+        filename: currentFile,
+        timestamp: new Date(),
+      });
     }
 
     if (printerState.isTracking && isIdle && wasPrinting) {
@@ -115,6 +123,14 @@ async function pollPrinter(printerId: number, ipAddress: string, token: string):
       
       console.log(`[BackgroundPoller] Print ${wasCompleted ? 'completed' : 'stopped'} on printer ${printerId}: ${printerState.currentFilename}`);
       console.log(`[BackgroundPoller] Duration: ${Math.floor(durationSeconds / 60)} minutes, Last Progress: ${printerState.lastProgress}%`);
+      
+      sendNotification({
+        type: wasCompleted ? "print_completed" : "print_stopped",
+        printerId,
+        filename: printerState.currentFilename,
+        timestamp: new Date(),
+        durationMinutes: Math.floor(durationSeconds / 60),
+      });
 
       // Record the print if it appears to be a real completed print (not just a cancelled/aborted job)
       if (wasCompleted && printerState.currentFilename && durationSeconds > 60) {
