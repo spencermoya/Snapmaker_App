@@ -563,6 +563,11 @@ export default function Dashboard() {
             progress={status?.progress || 0} 
             timeLeft={formatTimeRemaining(status?.timeRemaining || null)}
             timeRemainingSeconds={status?.timeRemaining}
+            elapsedTime={formatTimeRemaining(status?.elapsedTime || null)}
+            elapsedTimeSeconds={status?.elapsedTime}
+            totalPrintTime={status?.totalPrintTime}
+            currentLine={status?.currentLine}
+            totalLines={status?.totalLines}
             filename={status?.currentFile || (isConnected ? "No active job" : "Printer offline")} 
           />
         );

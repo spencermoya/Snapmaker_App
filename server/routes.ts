@@ -167,23 +167,70 @@ export async function registerRoutes(
         printer.token
       );
 
+      // Debug logging to see raw API response
+      console.log("[Snapmaker API] Raw status response:", JSON.stringify(statusData, null, 2));
+
       await storage.updatePrinter(printerId, {
         isConnected: true,
         lastSeen: new Date(),
       });
 
+      // Parse progress - Snapmaker typically returns percentage as whole number (0-100)
+      // Only treat as fractional if the value has decimals AND is less than 1
+      // (e.g., 0.5432 would be treated as a fraction, but 1 or 50 would not)
+      let progress = statusData.progress ?? 0;
+      const progressStr = String(statusData.progress ?? 0);
+      const hasFractionalPart = progressStr.includes('.') && parseFloat(progressStr) !== Math.floor(parseFloat(progressStr));
+      if (hasFractionalPart && progress < 1) {
+        // Only convert if it's clearly a fractional value like 0.5432
+        progress = progress * 100;
+      }
+
+      // Parse elapsed time - may be in seconds or milliseconds
+      let elapsedTime = statusData.elapsedTime ?? statusData.elapsed_time ?? statusData.elapsed ?? null;
+      
+      // Parse time remaining - check multiple possible field names
+      let timeRemaining = statusData.estimatedTime ?? statusData.estimated_time ?? 
+                          statusData.time_remaining ?? statusData.timeRemaining ?? 
+                          statusData.remainingTime ?? statusData.remaining_time ?? null;
+      
+      // Parse total print time
+      let totalPrintTime = statusData.printTime ?? statusData.print_time ?? 
+                           statusData.totalTime ?? statusData.total_time ?? null;
+
+      // Parse G-code line progress for accurate percentage
+      const currentLine = statusData.currentLine ?? statusData.current_line ?? 
+                          statusData.lineNumber ?? statusData.line_number ?? null;
+      const totalLines = statusData.totalLines ?? statusData.total_lines ?? 
+                         statusData.totalLine ?? statusData.total_line ?? null;
+
+      // Calculate progress from lines if available and more accurate
+      if (currentLine !== null && totalLines !== null && totalLines > 0) {
+        const lineProgress = (currentLine / totalLines) * 100;
+        // Use line-based progress if it seems more accurate (within reasonable bounds)
+        if (lineProgress >= 0 && lineProgress <= 100) {
+          progress = lineProgress;
+        }
+      }
+
       const status: PrinterStatus = {
         state: statusData.status || statusData.state || "idle",
         temperature: {
-          nozzle: statusData.temperature?.nozzle || 0,
-          bed: statusData.temperature?.bed || 0,
-          targetNozzle: statusData.temperature?.target_nozzle || 0,
-          targetBed: statusData.temperature?.target_bed || 0,
+          nozzle: statusData.temperature?.nozzle ?? statusData.nozzleTemp ?? 0,
+          bed: statusData.temperature?.bed ?? statusData.bedTemp ?? 0,
+          targetNozzle: statusData.temperature?.target_nozzle ?? statusData.temperature?.targetNozzle ?? statusData.nozzleTarget ?? 0,
+          targetBed: statusData.temperature?.target_bed ?? statusData.temperature?.targetBed ?? statusData.bedTarget ?? 0,
         },
-        progress: statusData.progress || 0,
-        currentFile: statusData.current_file || null,
-        timeRemaining: statusData.time_remaining || null,
+        progress: Math.round(progress * 100) / 100, // Round to 2 decimal places
+        currentFile: statusData.current_file ?? statusData.currentFile ?? statusData.filename ?? statusData.fileName ?? null,
+        timeRemaining: timeRemaining,
+        elapsedTime: elapsedTime,
+        totalPrintTime: totalPrintTime,
+        currentLine: currentLine,
+        totalLines: totalLines,
       };
+
+      console.log("[Snapmaker API] Parsed status:", JSON.stringify(status, null, 2));
 
       res.json(status);
     } catch (error) {

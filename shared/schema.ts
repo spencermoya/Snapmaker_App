@@ -158,4 +158,8 @@ export type PrinterStatus = {
   progress: number;
   currentFile: string | null;
   timeRemaining: number | null;
+  elapsedTime: number | null;
+  totalPrintTime: number | null;
+  currentLine: number | null;
+  totalLines: number | null;
 };
