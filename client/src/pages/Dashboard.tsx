@@ -626,7 +626,7 @@ export default function Dashboard() {
       {/* Fixed Buttons - Top Right */}
       <div className="fixed top-4 right-4 z-40 flex gap-2">
         <div className="bg-background/80 backdrop-blur-sm rounded-md border">
-          <NotificationToggle />
+          <NotificationToggle printerId={selectedPrinter?.id} />
         </div>
         <Button
           variant="outline"

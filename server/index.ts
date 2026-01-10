@@ -5,6 +5,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { ensureSchema } from "./ensureSchema";
 import { startBackgroundPolling } from "./backgroundPoller";
+import { initializeWebPush } from "./webPush";
 
 const app = express();
 const httpServer = createServer(app);
@@ -97,8 +98,9 @@ app.use((req, res, next) => {
     () => {
       log(`serving on http://0.0.0.0:${port}`);
       
-      // Start background polling after a short delay to let the server initialize
-      setTimeout(() => {
+      // Initialize services after a short delay to let the server initialize
+      setTimeout(async () => {
+        await initializeWebPush();
         startBackgroundPolling();
       }, 3000);
     },

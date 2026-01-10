@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import { sendNotification } from "./notifications";
+import { sendPushNotification } from "./webPush";
 
 const POLL_INTERVAL_MS = 30000;
 const SNAPMAKER_PORT = 8080;
@@ -109,6 +110,13 @@ async function pollPrinter(printerId: number, ipAddress: string, token: string):
         filename: currentFile,
         timestamp: new Date(),
       });
+      
+      sendPushNotification(printerId, {
+        type: "print_started",
+        printerId,
+        filename: currentFile,
+        timestamp: new Date().toISOString(),
+      });
     }
 
     if (printerState.isTracking && isIdle && wasPrinting) {
@@ -129,6 +137,14 @@ async function pollPrinter(printerId: number, ipAddress: string, token: string):
         printerId,
         filename: printerState.currentFilename,
         timestamp: new Date(),
+        durationMinutes: Math.floor(durationSeconds / 60),
+      });
+
+      sendPushNotification(printerId, {
+        type: wasCompleted ? "print_completed" : "print_stopped",
+        printerId,
+        filename: printerState.currentFilename,
+        timestamp: new Date().toISOString(),
         durationMinutes: Math.floor(durationSeconds / 60),
       });
 

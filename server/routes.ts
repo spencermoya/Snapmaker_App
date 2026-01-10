@@ -8,6 +8,7 @@ import { extractThumbnail } from "./thumbnailExtractor";
 import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } from "@shared/schema";
 import { z } from "zod";
 import { addNotificationClient } from "./notifications";
+import { getVapidPublicKey, initializeWebPush } from "./webPush";
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -69,6 +70,57 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
+  app.get("/api/push/vapid-public-key", async (req, res) => {
+    try {
+      const publicKey = await getVapidPublicKey();
+      if (!publicKey) {
+        return res.status(503).json({ error: "Web Push not configured" });
+      }
+      res.json({ publicKey });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get VAPID key" });
+    }
+  });
+
+  app.post("/api/printers/:id/push-subscription", async (req, res) => {
+    const printerId = parseInt(req.params.id);
+    if (isNaN(printerId)) {
+      return res.status(400).json({ error: "Invalid printer ID" });
+    }
+
+    const { endpoint, keys } = req.body;
+    if (!endpoint || !keys?.p256dh || !keys?.auth) {
+      return res.status(400).json({ error: "Invalid subscription data" });
+    }
+
+    try {
+      const subscription = await storage.addPushSubscription({
+        printerId,
+        endpoint,
+        p256dh: keys.p256dh,
+        auth: keys.auth,
+      });
+      res.json({ success: true, id: subscription.id });
+    } catch (error) {
+      console.error("Failed to save push subscription:", error);
+      res.status(500).json({ error: "Failed to save subscription" });
+    }
+  });
+
+  app.delete("/api/push-subscription", async (req, res) => {
+    const { endpoint } = req.body;
+    if (!endpoint) {
+      return res.status(400).json({ error: "Endpoint required" });
+    }
+
+    try {
+      await storage.deletePushSubscription(endpoint);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete subscription" });
+    }
+  });
+
   app.get("/api/printers/:id/notifications", async (req, res) => {
     const printerId = parseInt(req.params.id);
     if (isNaN(printerId)) {

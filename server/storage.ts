@@ -1,4 +1,4 @@
-import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, type PrintStat, type InsertPrintStat, type SmartPlug, type InsertSmartPlug, printers, printJobs, dashboardPreferences, uploadedFiles, appSettings, printStats, smartPlugs, DEFAULT_ENABLED_MODULES } from "@shared/schema";
+import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, type PrintStat, type InsertPrintStat, type SmartPlug, type InsertSmartPlug, type PushSubscription, type InsertPushSubscription, printers, printJobs, dashboardPreferences, uploadedFiles, appSettings, printStats, smartPlugs, pushSubscriptions, DEFAULT_ENABLED_MODULES } from "@shared/schema";
 import { sql } from "drizzle-orm";
 import { db } from "./db";
 import { eq, and, gte, desc } from "drizzle-orm";
@@ -29,6 +29,10 @@ export interface IStorage {
   addSmartPlug(plug: InsertSmartPlug): Promise<SmartPlug>;
   updateSmartPlug(id: number, data: Partial<SmartPlug>): Promise<SmartPlug | undefined>;
   deleteSmartPlug(id: number): Promise<boolean>;
+  getPushSubscriptions(printerId: number): Promise<PushSubscription[]>;
+  addPushSubscription(sub: InsertPushSubscription): Promise<PushSubscription>;
+  deletePushSubscription(endpoint: string): Promise<boolean>;
+  deletePushSubscriptionsByPrinter(printerId: number): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -234,6 +238,45 @@ export class DbStorage implements IStorage {
   async deleteSmartPlug(id: number): Promise<boolean> {
     const result = await db.delete(smartPlugs).where(eq(smartPlugs.id, id)).returning();
     return result.length > 0;
+  }
+
+  async getPushSubscriptions(printerId: number): Promise<PushSubscription[]> {
+    return await db
+      .select()
+      .from(pushSubscriptions)
+      .where(eq(pushSubscriptions.printerId, printerId));
+  }
+
+  async addPushSubscription(sub: InsertPushSubscription): Promise<PushSubscription> {
+    const existing = await db
+      .select()
+      .from(pushSubscriptions)
+      .where(eq(pushSubscriptions.endpoint, sub.endpoint))
+      .limit(1);
+    
+    if (existing[0]) {
+      const result = await db
+        .update(pushSubscriptions)
+        .set({ printerId: sub.printerId, p256dh: sub.p256dh, auth: sub.auth })
+        .where(eq(pushSubscriptions.endpoint, sub.endpoint))
+        .returning();
+      return result[0]!;
+    }
+    
+    const result = await db.insert(pushSubscriptions).values(sub).returning();
+    return result[0]!;
+  }
+
+  async deletePushSubscription(endpoint: string): Promise<boolean> {
+    const result = await db
+      .delete(pushSubscriptions)
+      .where(eq(pushSubscriptions.endpoint, endpoint))
+      .returning();
+    return result.length > 0;
+  }
+
+  async deletePushSubscriptionsByPrinter(printerId: number): Promise<void> {
+    await db.delete(pushSubscriptions).where(eq(pushSubscriptions.printerId, printerId));
   }
 }
 

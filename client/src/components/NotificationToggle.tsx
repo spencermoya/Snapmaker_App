@@ -1,30 +1,21 @@
-import { useState, useEffect } from "react";
-import { Bell, BellOff, BellRing } from "lucide-react";
+import { Bell, BellOff, BellRing, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { 
-  requestNotificationPermission, 
-  getNotificationPermission 
-} from "@/hooks/useNotifications";
+import { useWebPush } from "@/hooks/useWebPush";
 
-export default function NotificationToggle() {
-  const [permission, setPermission] = useState<NotificationPermission | "unsupported">("default");
+interface NotificationToggleProps {
+  printerId: number | undefined;
+}
 
-  useEffect(() => {
-    setPermission(getNotificationPermission());
-  }, []);
+export default function NotificationToggle({ printerId }: NotificationToggleProps) {
+  const { status, subscribe, unsubscribe, error } = useWebPush(printerId);
 
-  const handleRequestPermission = async () => {
-    const result = await requestNotificationPermission();
-    setPermission(result);
-  };
-
-  if (permission === "unsupported") {
+  if (status === "unsupported") {
     return (
       <Button
         variant="ghost"
         size="icon"
         disabled
-        title="Notifications not supported in this browser"
+        title="Push notifications not supported - try installing this app to your home screen"
         data-testid="notification-toggle-unsupported"
       >
         <BellOff className="h-5 w-5 text-muted-foreground" />
@@ -32,12 +23,27 @@ export default function NotificationToggle() {
     );
   }
 
-  if (permission === "granted") {
+  if (status === "loading") {
     return (
       <Button
         variant="ghost"
         size="icon"
-        title="Notifications enabled - you'll be notified when prints start or complete"
+        disabled
+        title="Checking notification status..."
+        data-testid="notification-toggle-loading"
+      >
+        <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
+      </Button>
+    );
+  }
+
+  if (status === "subscribed") {
+    return (
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={unsubscribe}
+        title="Notifications enabled - click to disable"
         data-testid="notification-toggle-enabled"
       >
         <BellRing className="h-5 w-5 text-green-500" />
@@ -45,16 +51,30 @@ export default function NotificationToggle() {
     );
   }
 
-  if (permission === "denied") {
+  if (status === "permission_denied") {
     return (
       <Button
         variant="ghost"
         size="icon"
         disabled
-        title="Notifications blocked - enable in browser settings"
+        title="Notifications blocked - enable in browser/device settings"
         data-testid="notification-toggle-denied"
       >
         <BellOff className="h-5 w-5 text-red-500" />
+      </Button>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={subscribe}
+        title={error || "Error - click to retry"}
+        data-testid="notification-toggle-error"
+      >
+        <Bell className="h-5 w-5 text-yellow-500" />
       </Button>
     );
   }
@@ -63,8 +83,9 @@ export default function NotificationToggle() {
     <Button
       variant="ghost"
       size="icon"
-      onClick={handleRequestPermission}
-      title="Click to enable print notifications"
+      onClick={subscribe}
+      disabled={!printerId}
+      title={printerId ? "Click to enable push notifications" : "Select a printer first"}
       data-testid="notification-toggle-request"
     >
       <Bell className="h-5 w-5 text-muted-foreground" />
