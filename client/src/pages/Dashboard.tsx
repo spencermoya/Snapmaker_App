@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Power, Settings, Fan, Lightbulb, PauseCircle, StopCircle, Plus, RefreshCw, Wifi, WifiOff, Trash2, LayoutGrid, Upload, Plug, Clock, BarChart3 } from "lucide-react";
+import { Power, Settings, Fan, Lightbulb, PauseCircle, StopCircle, Plus, RefreshCw, Wifi, WifiOff, Trash2, LayoutGrid, Upload, Plug, Clock, BarChart3, Bot } from "lucide-react";
 import { toast } from "sonner";
 import type { Printer, PrinterStatus as PrinterStatusType } from "@shared/schema";
 import { DEFAULT_ENABLED_MODULES } from "@shared/schema";
@@ -675,16 +675,27 @@ export default function Dashboard() {
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
-      {/* Fixed Settings Button - Top Right */}
-      <Button
-        variant="outline"
-        size="icon"
-        className="fixed top-4 right-4 z-40 bg-background/80 backdrop-blur-sm text-muted-foreground hover:text-foreground"
-        onClick={() => setLocation("/settings")}
-        data-testid="button-settings"
-      >
-        <Settings className="h-4 w-4" />
-      </Button>
+      {/* Fixed Buttons - Top Right */}
+      <div className="fixed top-4 right-4 z-40 flex gap-2">
+        <Button
+          variant="outline"
+          size="icon"
+          className="bg-background/80 backdrop-blur-sm text-blue-400 hover:text-blue-300 hover:bg-blue-900/30"
+          onClick={() => setLocation("/ai")}
+          data-testid="button-ai"
+        >
+          <Bot className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          className="bg-background/80 backdrop-blur-sm text-muted-foreground hover:text-foreground"
+          onClick={() => setLocation("/settings")}
+          data-testid="button-settings"
+        >
+          <Settings className="h-4 w-4" />
+        </Button>
+      </div>
 
       {isDragging && (
         <div 

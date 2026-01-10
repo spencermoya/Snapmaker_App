@@ -65,6 +65,20 @@ export const smartPlugs = pgTable("smart_plugs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const conversations = pgTable("conversations", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const messages = pgTable("messages", {
+  id: serial("id").primaryKey(),
+  conversationId: integer("conversation_id").references(() => conversations.id, { onDelete: "cascade" }),
+  role: text("role").notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const insertPrinterSchema = createInsertSchema(printers).omit({
   id: true,
   lastSeen: true,
@@ -96,6 +110,16 @@ export const insertSmartPlugSchema = createInsertSchema(smartPlugs).omit({
   createdAt: true,
 });
 
+export const insertConversationSchema = createInsertSchema(conversations).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertMessageSchema = createInsertSchema(messages).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const DEFAULT_ENABLED_MODULES = [
   "status",
   "webcam", 
@@ -118,6 +142,10 @@ export type PrintStat = typeof printStats.$inferSelect;
 export type InsertPrintStat = z.infer<typeof insertPrintStatSchema>;
 export type SmartPlug = typeof smartPlugs.$inferSelect;
 export type InsertSmartPlug = z.infer<typeof insertSmartPlugSchema>;
+export type Conversation = typeof conversations.$inferSelect;
+export type InsertConversation = z.infer<typeof insertConversationSchema>;
+export type Message = typeof messages.$inferSelect;
+export type InsertMessage = z.infer<typeof insertMessageSchema>;
 
 export type PrinterStatus = {
   state: string;

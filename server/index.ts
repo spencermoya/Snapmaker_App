@@ -1,5 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { registerAIRoutes } from "./aiAssistant";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { ensureSchema } from "./ensureSchema";
@@ -68,6 +69,7 @@ app.use((req, res, next) => {
   }
 
   await registerRoutes(httpServer, app);
+  registerAIRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
