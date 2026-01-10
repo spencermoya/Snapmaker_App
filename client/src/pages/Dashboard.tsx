@@ -9,6 +9,7 @@ import PrintStatsPanel from "@/components/PrintStats";
 import WebcamFeed from "@/components/WebcamFeed";
 import NotificationToggle from "@/components/NotificationToggle";
 import { useNotifications } from "@/hooks/useNotifications";
+import { useAdaptivePolling, useVisibility } from "@/hooks/useAdaptivePolling";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -126,6 +127,8 @@ export default function Dashboard() {
   const [dragCounter, setDragCounter] = useState(0);
   const [lightOn, setLightOn] = useState(false);
   const [fanOn, setFanOn] = useState(false);
+  
+  const isPageVisible = useVisibility();
 
   interface SmartPlug {
     id: number;
@@ -155,7 +158,7 @@ export default function Dashboard() {
       return res.json();
     },
     enabled: !!enabledPlug,
-    refetchInterval: 10000,
+    refetchInterval: isPageVisible ? 30000 : false,
   });
 
   const plugPowerMutation = useMutation({
@@ -183,7 +186,7 @@ export default function Dashboard() {
 
   const { data: printers = [], isLoading: printersLoading } = useQuery<Printer[]>({
     queryKey: ["/api/printers"],
-    refetchInterval: 5000,
+    refetchInterval: isPageVisible ? 10000 : false,
   });
 
   // Use connected printer if available, otherwise use first printer in list
@@ -246,7 +249,7 @@ export default function Dashboard() {
   const { data: pingResult } = useQuery<{ online: boolean; hasToken: boolean }>({
     queryKey: [`/api/printers/${disconnectedPrinter?.id}/ping`],
     enabled: !!disconnectedPrinter && !activePrinter,
-    refetchInterval: 10000,
+    refetchInterval: isPageVisible ? 15000 : false,
   });
 
   const addPrinterMutation = useMutation({
@@ -505,7 +508,12 @@ export default function Dashboard() {
   const { data: status } = useQuery<PrinterStatusType>({
     queryKey: [`/api/printers/${activePrinter?.id}/status`],
     enabled: !!activePrinter,
-    refetchInterval: 3000,
+    refetchInterval: (query) => {
+      if (!isPageVisible) return false;
+      const state = query.state.data?.state;
+      const isPrinting = state && (state.toLowerCase().includes('print') || state.toLowerCase().includes('working'));
+      return isPrinting ? 5000 : 30000;
+    },
   });
 
   const handleAddPrinter = useCallback((name: string, ip: string) => {
