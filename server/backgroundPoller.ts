@@ -60,7 +60,7 @@ async function pingPrinter(ipAddress: string, attempt: number = 1): Promise<bool
       signal: AbortSignal.timeout(timeoutMs),
     });
     
-    const isReachable = response.ok || response.status === 401 || response.status === 403;
+    const isReachable = response.ok || response.status === 400 || response.status === 401 || response.status === 403;
     if (isReachable) {
       console.log(`[BackgroundPoller] Ping ${ipAddress}: SUCCESS (status ${response.status})`);
     }
