@@ -70,7 +70,10 @@ shared/           # Shared code between frontend/backend
   - Watch folder: Configure a local folder path in Settings; new G-code files are auto-imported (uses `server/fileWatcher.ts`)
   - Luban auto-capture: Proxy server intercepts Luban uploads, captures files automatically, and forwards to printer (uses `server/lubanProxy.ts`)
 - **Luban token capture**: When Luban connects through the proxy, the app captures and saves Luban's authentication token. This token is then used for prompt-free connections - no touchscreen confirmation needed after the first Luban connection.
-- Customizable dashboard: Users can toggle modules (status, webcam, temperature, jog controls, job controls, file list) on/off via the customize panel
+- Customizable dashboard: Users can toggle modules (status, webcam, temperature, jog controls, job controls, file list, stats) on/off via the customize panel
+- **Background polling**: Server-side polling service runs every 30 seconds to monitor connected printers (see `server/backgroundPoller.ts`)
+- **Print stats tracking**: Automatically detects print start/end events and records completed prints to database with duration and filename
+- **Stats dashboard**: View print statistics by period (Today/Week/Month/All Time) with total print time, print count, and recent print history
 
 ### UI Libraries
 - **Radix UI**: Headless component primitives for accessibility
