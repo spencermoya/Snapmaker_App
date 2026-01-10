@@ -175,6 +175,9 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Printer not found" });
       }
 
+      console.log(`[Connect] Attempting connection to printer ${printerId} at ${printer.ipAddress}`);
+      console.log(`[Connect] Existing token: ${printer.token ? printer.token.substring(0, 8) + '...' : 'null'}`);
+
       const existingToken = printer.token || "";
       const result = await snapmakerRequest(
         printer.ipAddress,
@@ -184,12 +187,16 @@ export async function registerRoutes(
         existingToken
       );
 
+      console.log(`[Connect] Response from printer:`, JSON.stringify(result));
+
       if (result.token) {
+        console.log(`[Connect] Got new token: ${result.token.substring(0, 8)}... - SAVING to database`);
         await storage.updatePrinter(printerId, {
           token: result.token,
           isConnected: true,
           lastSeen: new Date(),
         });
+        console.log(`[Connect] Token saved successfully for printer ${printerId}`);
         return res.json({
           message: "Connected successfully",
           requiresConfirmation: false,
@@ -197,12 +204,14 @@ export async function registerRoutes(
       }
 
       if (result.status === 204) {
+        console.log(`[Connect] Printer requires touchscreen confirmation`);
         return res.json({
           message: "Please confirm connection on printer touchscreen, then click Connect again",
           requiresConfirmation: true,
         });
       }
 
+      console.log(`[Connect] Connected but no token in response - marking as connected without token`);
       await storage.updatePrinter(printerId, {
         isConnected: true,
         lastSeen: new Date(),
@@ -213,6 +222,7 @@ export async function registerRoutes(
         requiresConfirmation: false,
       });
     } catch (error) {
+      console.error(`[Connect] Error:`, error);
       res.status(500).json({
         error: error instanceof Error ? error.message : "Failed to connect to printer",
       });

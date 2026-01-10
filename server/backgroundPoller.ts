@@ -246,10 +246,18 @@ async function pollAllPrinters(): Promise<void> {
     const printers = await storage.getAllPrinters();
     
     for (const printer of printers) {
+      const hasToken = !!printer.token;
+      const tokenPreview = printer.token ? `${printer.token.substring(0, 8)}...` : 'null';
+      
+      console.log(`[BackgroundPoller] Checking printer ${printer.id} (${printer.name}): token=${tokenPreview}, isConnected=${printer.isConnected}`);
+      
       if (printer.token && printer.isConnected) {
         await pollPrinter(printer.id, printer.ipAddress, printer.token);
       } else if (printer.token && !printer.isConnected) {
+        console.log(`[BackgroundPoller] Printer ${printer.id} has token but disconnected, pinging ${printer.ipAddress}...`);
         const isReachable = await pingPrinter(printer.ipAddress);
+        console.log(`[BackgroundPoller] Ping result for printer ${printer.id}: ${isReachable ? 'REACHABLE' : 'UNREACHABLE'}`);
+        
         if (isReachable) {
           const attempts = reconnectAttempts.get(printer.id) || 0;
           console.log(`[BackgroundPoller] Printer ${printer.id} is reachable but disconnected, attempting reconnect (attempt ${attempts + 1})`);
@@ -257,11 +265,15 @@ async function pollAllPrinters(): Promise<void> {
           const newToken = await attemptReconnect(printer.id, printer.ipAddress, printer.token);
           
           if (newToken) {
+            console.log(`[BackgroundPoller] Reconnect SUCCESS for printer ${printer.id}, new token: ${newToken.substring(0, 8)}...`);
             await pollPrinter(printer.id, printer.ipAddress, newToken);
           } else {
+            console.log(`[BackgroundPoller] Reconnect FAILED for printer ${printer.id}`);
             reconnectAttempts.set(printer.id, attempts + 1);
           }
         }
+      } else if (!printer.token) {
+        console.log(`[BackgroundPoller] Printer ${printer.id} has NO TOKEN - cannot auto-reconnect. Manual connection required first.`);
       }
     }
   } catch (error) {
