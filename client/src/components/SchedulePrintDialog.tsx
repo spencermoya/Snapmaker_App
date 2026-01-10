@@ -29,12 +29,12 @@ export default function SchedulePrintDialog({ printerId, trigger, preSelectedFil
 
   const { data: files = [] } = useQuery<UploadedFile[]>({
     queryKey: [`/api/printers/${printerId}/uploaded-files`],
-    enabled: open,
+    enabled: open && !!printerId,
   });
 
   const { data: smartPlugs = [] } = useQuery<SmartPlug[]>({
     queryKey: ["/api/smart-plugs"],
-    enabled: open,
+    enabled: open && !!printerId,
   });
 
   const scheduleMutation = useMutation({
@@ -58,6 +58,7 @@ export default function SchedulePrintDialog({ printerId, trigger, preSelectedFil
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/scheduled-prints"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/scheduled-prints", printerId] });
       toast.success("Print scheduled successfully!");
       setOpen(false);
       resetForm();

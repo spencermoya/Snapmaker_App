@@ -34,6 +34,7 @@ export default function ScheduledPrintsPanel({ printerId }: ScheduledPrintsPanel
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/scheduled-prints"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/scheduled-prints", printerId] });
       toast.success("Scheduled print cancelled");
     },
     onError: () => {
