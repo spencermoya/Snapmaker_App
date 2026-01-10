@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Bot, Send, Plus, Trash2, Code, FileCode, Check, X, ChevronDown, ChevronUp } from "lucide-react";
+import { Bot, Send, Plus, Trash2, Code, FileCode, Check, X, ChevronDown, ChevronUp, Wifi, WifiOff, Settings } from "lucide-react";
+import { Link } from "wouter";
 
 interface Message {
   id: number;
@@ -105,12 +106,32 @@ export function AIAssistant() {
     review: null,
     loading: false,
   });
+  const [ollamaStatus, setOllamaStatus] = useState<{ connected: boolean; model: string; url: string }>({
+    connected: false,
+    model: "",
+    url: "",
+  });
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchConversations();
+    checkOllamaStatus();
   }, []);
+
+  async function checkOllamaStatus() {
+    try {
+      const res = await fetch("/api/ai/status");
+      const data = await res.json();
+      setOllamaStatus({
+        connected: data.connected,
+        model: data.model || "tinyllama",
+        url: data.url || "http://localhost:11434",
+      });
+    } catch (error) {
+      console.error("Failed to check Ollama status:", error);
+    }
+  }
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -296,8 +317,24 @@ export function AIAssistant() {
           <CardTitle className="flex items-center gap-2 text-lg">
             <Bot className="w-5 h-5 text-blue-400" />
             AI Developer
+            {ollamaStatus.connected ? (
+              <span className="flex items-center gap-1 text-xs font-normal text-green-400" title={`Connected to ${ollamaStatus.url}`}>
+                <Wifi className="w-3 h-3" />
+                {ollamaStatus.model}
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-xs font-normal text-red-400" title="Ollama not connected">
+                <WifiOff className="w-3 h-3" />
+                Offline
+              </span>
+            )}
           </CardTitle>
           <div className="flex gap-2">
+            <Link href="/settings">
+              <Button variant="outline" size="sm" data-testid="ai-settings">
+                <Settings className="w-4 h-4" />
+              </Button>
+            </Link>
             <Button
               variant="outline"
               size="sm"

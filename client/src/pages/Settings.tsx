@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Trash2, Wifi, WifiOff, ArrowLeft, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Plug, Search, Loader2, Power, Home } from "lucide-react";
+import { Plus, Trash2, Wifi, WifiOff, ArrowLeft, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Plug, Search, Loader2, Power, Home, Bot, RefreshCw } from "lucide-react";
 import { useLocation } from "wouter";
 import type { Printer } from "@shared/schema";
 
@@ -69,7 +70,61 @@ export default function Settings() {
   const [discoveredDevices, setDiscoveredDevices] = useState<DiscoveredDevice[]>([]);
   const [manualPlugIp, setManualPlugIp] = useState("");
   const [manualPlugName, setManualPlugName] = useState("");
+  const [ollamaUrl, setOllamaUrl] = useState("http://localhost:11434");
+  const [ollamaModel, setOllamaModel] = useState("tinyllama");
+  const [ollamaConnected, setOllamaConnected] = useState(false);
+  const [availableModels, setAvailableModels] = useState<{name: string; size: string}[]>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    fetchAISettings();
+  }, []);
+
+  async function fetchAISettings() {
+    try {
+      const res = await fetch("/api/ai/settings");
+      const data = await res.json();
+      setOllamaUrl(data.ollamaUrl || "http://localhost:11434");
+      setOllamaModel(data.model || "tinyllama");
+      checkOllamaConnection(data.ollamaUrl);
+    } catch (error) {
+      console.error("Failed to fetch AI settings:", error);
+    }
+  }
+
+  async function checkOllamaConnection(url?: string) {
+    setIsLoadingModels(true);
+    try {
+      const res = await fetch("/api/ai/models");
+      const data = await res.json();
+      setOllamaConnected(data.connected);
+      setAvailableModels(data.models || []);
+    } catch (error) {
+      setOllamaConnected(false);
+      setAvailableModels([]);
+    } finally {
+      setIsLoadingModels(false);
+    }
+  }
+
+  async function saveOllamaSettings() {
+    try {
+      const res = await fetch("/api/ai/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ollamaUrl, model: ollamaModel }),
+      });
+      if (res.ok) {
+        toast.success("AI settings saved");
+        checkOllamaConnection(ollamaUrl);
+      } else {
+        toast.error("Failed to save AI settings");
+      }
+    } catch (error) {
+      toast.error("Failed to save AI settings");
+    }
+  }
 
   const { data: printers = [], isLoading } = useQuery<Printer[]>({
     queryKey: ["/api/printers"],
@@ -411,6 +466,103 @@ export default function Settings() {
               <Plus className="h-4 w-4 mr-2" />
               Add Printer
             </Button>
+          </div>
+        </Card>
+
+        <Separator />
+
+        {/* AI Assistant Settings */}
+        <Card className="p-6 bg-secondary/20 border-border">
+          <div className="flex items-center gap-3 mb-4">
+            <Bot className="h-5 w-5 text-blue-400" />
+            <h2 className="text-lg font-semibold">AI Assistant (Local Ollama)</h2>
+          </div>
+          
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 mb-2">
+              {ollamaConnected ? (
+                <span className="flex items-center gap-2 text-sm text-green-400">
+                  <Wifi className="h-4 w-4" />
+                  Connected
+                </span>
+              ) : (
+                <span className="flex items-center gap-2 text-sm text-red-400">
+                  <WifiOff className="h-4 w-4" />
+                  Not Connected
+                </span>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => checkOllamaConnection()}
+                disabled={isLoadingModels}
+                data-testid="refresh-ollama"
+              >
+                <RefreshCw className={`h-4 w-4 ${isLoadingModels ? "animate-spin" : ""}`} />
+              </Button>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="ollama-url">Ollama Server URL</Label>
+              <Input
+                id="ollama-url"
+                placeholder="http://localhost:11434"
+                value={ollamaUrl}
+                onChange={(e) => setOllamaUrl(e.target.value)}
+                data-testid="input-ollama-url"
+              />
+              <p className="text-xs text-muted-foreground">
+                Usually http://localhost:11434 if Ollama is running on your Raspberry Pi
+              </p>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="ollama-model">Model</Label>
+              {availableModels.length > 0 ? (
+                <Select value={ollamaModel} onValueChange={setOllamaModel}>
+                  <SelectTrigger data-testid="select-ollama-model">
+                    <SelectValue placeholder="Select a model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableModels.map((m) => (
+                      <SelectItem key={m.name} value={m.name}>
+                        {m.name} ({m.size})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  id="ollama-model"
+                  placeholder="tinyllama"
+                  value={ollamaModel}
+                  onChange={(e) => setOllamaModel(e.target.value)}
+                  data-testid="input-ollama-model"
+                />
+              )}
+              <p className="text-xs text-muted-foreground">
+                Recommended: tinyllama (fast), phi3:mini (balanced), codellama:7b (coding)
+              </p>
+            </div>
+
+            <Button onClick={saveOllamaSettings} className="w-full md:w-auto" data-testid="save-ollama">
+              Save AI Settings
+            </Button>
+
+            <Separator className="my-4" />
+
+            <div className="text-sm text-muted-foreground space-y-2">
+              <p className="font-medium text-foreground">Ollama Installation (Raspberry Pi):</p>
+              <ol className="list-decimal list-inside space-y-1 text-xs">
+                <li>SSH into your Pi: <code className="bg-zinc-800 px-1 rounded">ssh pi@your-pi-ip</code></li>
+                <li>Install Ollama: <code className="bg-zinc-800 px-1 rounded">curl -fsSL https://ollama.com/install.sh | sh</code></li>
+                <li>Pull a model: <code className="bg-zinc-800 px-1 rounded">ollama pull tinyllama</code></li>
+                <li>Ollama starts automatically on port 11434</li>
+              </ol>
+              <p className="text-xs mt-2">
+                Note: Requires Pi 4/5 with 8GB RAM. Models run 100% locally - no internet needed after download.
+              </p>
+            </div>
           </div>
         </Card>
 

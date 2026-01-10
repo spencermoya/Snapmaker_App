@@ -1,16 +1,20 @@
 import type { Express, Request, Response } from "express";
-import OpenAI from "openai";
 import fs from "fs";
 import path from "path";
 import { chatStorage } from "./replit_integrations/chat/storage";
-
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
+import { storage } from "./storage";
 
 const ALLOWED_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".json", ".css", ".html", ".md"];
 const EXCLUDED_DIRS = ["node_modules", ".git", "dist", "build", ".next", "coverage"];
+
+const DEFAULT_OLLAMA_URL = "http://localhost:11434";
+const DEFAULT_MODEL = "tinyllama";
+
+async function getOllamaConfig() {
+  const url = await storage.getSetting("ollama_url") || DEFAULT_OLLAMA_URL;
+  const model = await storage.getSetting("ollama_model") || DEFAULT_MODEL;
+  return { url, model };
+}
 
 function isAllowedFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
@@ -97,6 +101,80 @@ Key directories:
 Be helpful, concise, and provide working code. When asked to implement something, provide complete code that can be copy-pasted.`;
 
 export function registerAIRoutes(app: Express): void {
+  app.get("/api/ai/settings", async (req: Request, res: Response) => {
+    try {
+      const { url, model } = await getOllamaConfig();
+      res.json({ ollamaUrl: url, model });
+    } catch (error) {
+      console.error("Error fetching AI settings:", error);
+      res.status(500).json({ error: "Failed to fetch AI settings" });
+    }
+  });
+
+  app.put("/api/ai/settings", async (req: Request, res: Response) => {
+    try {
+      const { ollamaUrl, model } = req.body;
+      if (ollamaUrl !== undefined) {
+        await storage.setSetting("ollama_url", ollamaUrl || DEFAULT_OLLAMA_URL);
+      }
+      if (model !== undefined) {
+        await storage.setSetting("ollama_model", model || DEFAULT_MODEL);
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error updating AI settings:", error);
+      res.status(500).json({ error: "Failed to update AI settings" });
+    }
+  });
+
+  app.get("/api/ai/models", async (req: Request, res: Response) => {
+    try {
+      const { url } = await getOllamaConfig();
+      const response = await fetch(`${url}/api/tags`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      
+      if (!response.ok) {
+        return res.json({ models: [], error: "Could not connect to Ollama" });
+      }
+      
+      const data = await response.json();
+      const models = (data.models || []).map((m: any) => ({
+        name: m.name,
+        size: m.size ? `${(m.size / 1024 / 1024 / 1024).toFixed(1)} GB` : "Unknown",
+        modified: m.modified_at,
+      }));
+      
+      res.json({ models, connected: true });
+    } catch (error) {
+      console.error("Error fetching models:", error);
+      res.json({ models: [], connected: false, error: "Ollama not reachable" });
+    }
+  });
+
+  app.get("/api/ai/status", async (req: Request, res: Response) => {
+    try {
+      const { url, model } = await getOllamaConfig();
+      const response = await fetch(`${url}/api/tags`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      
+      res.json({ 
+        connected: response.ok, 
+        url,
+        model,
+      });
+    } catch (error) {
+      const { url, model } = await getOllamaConfig();
+      res.json({ 
+        connected: false, 
+        url,
+        model,
+        error: "Cannot connect to Ollama server",
+      });
+    }
+  });
+
   app.get("/api/ai/files", async (req: Request, res: Response) => {
     try {
       const files = listProjectFiles(process.cwd());
@@ -195,6 +273,7 @@ export function registerAIRoutes(app: Express): void {
     try {
       const conversationId = parseInt(req.params.id);
       const { content, includeFile } = req.body;
+      const { url, model } = await getOllamaConfig();
 
       let messageContent = content;
       if (includeFile) {
@@ -208,7 +287,7 @@ export function registerAIRoutes(app: Express): void {
 
       const messages = await chatStorage.getMessagesByConversation(conversationId);
       const chatMessages = [
-        { role: "system" as const, content: SYSTEM_PROMPT },
+        { role: "system", content: SYSTEM_PROMPT },
         ...messages.map((m) => ({
           role: m.role as "user" | "assistant",
           content: m.content,
@@ -219,27 +298,56 @@ export function registerAIRoutes(app: Express): void {
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
-      const stream = await openai.chat.completions.create({
-        model: "gpt-4.1",
-        messages: chatMessages,
-        stream: true,
-        max_completion_tokens: 4096,
-      });
+      try {
+        const ollamaResponse = await fetch(`${url}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model,
+            messages: chatMessages,
+            stream: true,
+          }),
+        });
 
-      let fullResponse = "";
-
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || "";
-        if (content) {
-          fullResponse += content;
-          res.write(`data: ${JSON.stringify({ content })}\n\n`);
+        if (!ollamaResponse.ok) {
+          throw new Error(`Ollama error: ${ollamaResponse.status}`);
         }
+
+        const reader = ollamaResponse.body?.getReader();
+        if (!reader) throw new Error("No reader available");
+
+        const decoder = new TextDecoder();
+        let fullResponse = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          const lines = chunk.split("\n").filter(Boolean);
+
+          for (const line of lines) {
+            try {
+              const data = JSON.parse(line);
+              if (data.message?.content) {
+                fullResponse += data.message.content;
+                res.write(`data: ${JSON.stringify({ content: data.message.content })}\n\n`);
+              }
+              if (data.done) {
+                await chatStorage.createMessage(conversationId, "assistant", fullResponse);
+                res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+              }
+            } catch (e) {}
+          }
+        }
+
+        res.end();
+      } catch (ollamaError) {
+        console.error("Ollama error:", ollamaError);
+        const errorMessage = ollamaError instanceof Error ? ollamaError.message : "Failed to connect to Ollama";
+        res.write(`data: ${JSON.stringify({ error: errorMessage })}\n\n`);
+        res.end();
       }
-
-      await chatStorage.createMessage(conversationId, "assistant", fullResponse);
-
-      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-      res.end();
     } catch (error) {
       console.error("Error sending message:", error);
       if (res.headersSent) {
@@ -254,6 +362,7 @@ export function registerAIRoutes(app: Express): void {
   app.post("/api/ai/review", async (req: Request, res: Response) => {
     try {
       const { filePath, proposedChanges } = req.body;
+      const { url, model } = await getOllamaConfig();
       
       if (!filePath || !proposedChanges) {
         return res.status(400).json({ error: "File path and proposed changes required" });
@@ -281,20 +390,29 @@ Analyze the changes and respond with:
 
 Format your response clearly.`;
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-4.1",
-        messages: [
-          { role: "system", content: "You are a senior code reviewer. Review code changes for correctness, best practices, and potential issues." },
-          { role: "user", content: reviewPrompt },
-        ],
-        max_completion_tokens: 2048,
+      const response = await fetch(`${url}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: "You are a senior code reviewer. Review code changes for correctness, best practices, and potential issues." },
+            { role: "user", content: reviewPrompt },
+          ],
+          stream: false,
+        }),
       });
 
-      const review = response.choices[0]?.message?.content || "Unable to generate review";
+      if (!response.ok) {
+        throw new Error(`Ollama error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const review = data.message?.content || "Unable to generate review";
       res.json({ review });
     } catch (error) {
       console.error("Error reviewing code:", error);
-      res.status(500).json({ error: "Failed to review code" });
+      res.status(500).json({ error: "Failed to review code. Is Ollama running?" });
     }
   });
 
