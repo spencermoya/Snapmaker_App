@@ -1131,6 +1131,83 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/printers/:id/stats/period", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const period = req.query.period as string || "all";
+      
+      const now = new Date();
+      let since: Date;
+      
+      switch (period) {
+        case "today":
+          since = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          break;
+        case "week":
+          since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case "month":
+          since = new Date(now.getFullYear(), now.getMonth(), 1);
+          break;
+        case "year":
+          since = new Date(now.getFullYear(), 0, 1);
+          break;
+        case "all":
+        default:
+          const totals = await storage.getPrintStatsTotals(printerId);
+          return res.json(totals);
+      }
+      
+      const stats = await storage.getPrintStatsByPeriod(printerId, since);
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get print stats for period" });
+    }
+  });
+
+  app.get("/api/printers/:id/stats/recent", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const limit = parseInt(req.query.limit as string) || 10;
+      const stats = await storage.getRecentPrintStats(printerId, limit);
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get recent print stats" });
+    }
+  });
+
+  app.get("/api/printers/:id/stats/summary", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const now = new Date();
+      
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const yearStart = new Date(now.getFullYear(), 0, 1);
+      
+      const [today, week, month, year, allTime, recent] = await Promise.all([
+        storage.getPrintStatsByPeriod(printerId, todayStart),
+        storage.getPrintStatsByPeriod(printerId, weekStart),
+        storage.getPrintStatsByPeriod(printerId, monthStart),
+        storage.getPrintStatsByPeriod(printerId, yearStart),
+        storage.getPrintStatsTotals(printerId),
+        storage.getRecentPrintStats(printerId, 5),
+      ]);
+      
+      res.json({
+        today,
+        week,
+        month,
+        year,
+        allTime,
+        recentPrints: recent,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get print stats summary" });
+    }
+  });
+
   // Smart plug discovery and management endpoints
   app.get("/api/smart-plugs/discover", async (req, res) => {
     try {

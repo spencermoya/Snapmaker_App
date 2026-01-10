@@ -4,6 +4,7 @@ import { registerAIRoutes } from "./aiAssistant";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { ensureSchema } from "./ensureSchema";
+import { startBackgroundPolling } from "./backgroundPoller";
 
 const app = express();
 const httpServer = createServer(app);
@@ -95,6 +96,11 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on http://0.0.0.0:${port}`);
+      
+      // Start background polling after a short delay to let the server initialize
+      setTimeout(() => {
+        startBackgroundPolling();
+      }, 3000);
     },
   );
 })();

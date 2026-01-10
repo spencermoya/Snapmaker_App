@@ -1,7 +1,7 @@
 import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, type PrintStat, type InsertPrintStat, type SmartPlug, type InsertSmartPlug, printers, printJobs, dashboardPreferences, uploadedFiles, appSettings, printStats, smartPlugs, DEFAULT_ENABLED_MODULES } from "@shared/schema";
 import { sql } from "drizzle-orm";
 import { db } from "./db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, gte, desc } from "drizzle-orm";
 
 export interface IStorage {
   getPrinter(id: number): Promise<Printer | undefined>;
@@ -21,6 +21,8 @@ export interface IStorage {
   addPrintStat(stat: InsertPrintStat): Promise<PrintStat>;
   getPrintStats(printerId: number): Promise<PrintStat[]>;
   getPrintStatsTotals(printerId: number): Promise<{ totalPrintTimeSeconds: number; totalFilamentUsedMm: number; totalPrints: number }>;
+  getPrintStatsByPeriod(printerId: number, since: Date): Promise<{ totalPrintTimeSeconds: number; totalFilamentUsedMm: number; totalPrints: number }>;
+  getRecentPrintStats(printerId: number, limit: number): Promise<PrintStat[]>;
   getSmartPlugs(): Promise<SmartPlug[]>;
   getSmartPlug(id: number): Promise<SmartPlug | undefined>;
   getEnabledSmartPlugs(): Promise<SmartPlug[]>;
@@ -174,6 +176,35 @@ export class DbStorage implements IStorage {
       totalFilamentUsedMm: Number(result[0]?.totalFilamentUsedMm ?? 0),
       totalPrints: Number(result[0]?.totalPrints ?? 0),
     };
+  }
+
+  async getPrintStatsByPeriod(printerId: number, since: Date): Promise<{ totalPrintTimeSeconds: number; totalFilamentUsedMm: number; totalPrints: number }> {
+    const result = await db
+      .select({
+        totalPrintTimeSeconds: sql<number>`COALESCE(SUM(${printStats.printTimeSeconds}), 0)`,
+        totalFilamentUsedMm: sql<number>`COALESCE(SUM(${printStats.filamentUsedMm}), 0)`,
+        totalPrints: sql<number>`COUNT(*)`,
+      })
+      .from(printStats)
+      .where(and(
+        eq(printStats.printerId, printerId),
+        gte(printStats.completedAt, since)
+      ));
+    
+    return {
+      totalPrintTimeSeconds: Number(result[0]?.totalPrintTimeSeconds ?? 0),
+      totalFilamentUsedMm: Number(result[0]?.totalFilamentUsedMm ?? 0),
+      totalPrints: Number(result[0]?.totalPrints ?? 0),
+    };
+  }
+
+  async getRecentPrintStats(printerId: number, limit: number): Promise<PrintStat[]> {
+    return await db
+      .select()
+      .from(printStats)
+      .where(eq(printStats.printerId, printerId))
+      .orderBy(desc(printStats.completedAt))
+      .limit(limit);
   }
 
   async getSmartPlugs(): Promise<SmartPlug[]> {
