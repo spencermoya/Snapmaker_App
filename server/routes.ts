@@ -8,7 +8,7 @@ import { extractThumbnail } from "./thumbnailExtractor";
 import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } from "@shared/schema";
 import { z } from "zod";
 import { addNotificationClient } from "./notifications";
-import { getVapidPublicKey, initializeWebPush } from "./webPush";
+import { getVapidPublicKey, initializeWebPush, sendPushNotification } from "./webPush";
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -118,6 +118,33 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete subscription" });
+    }
+  });
+
+  app.post("/api/printers/:id/test-notification", async (req, res) => {
+    const printerId = parseInt(req.params.id);
+    if (isNaN(printerId)) {
+      return res.status(400).json({ error: "Invalid printer ID" });
+    }
+
+    try {
+      const subscriptions = await storage.getPushSubscriptions(printerId);
+      if (subscriptions.length === 0) {
+        return res.status(400).json({ error: "No push subscriptions found. Please enable notifications first." });
+      }
+
+      await sendPushNotification(printerId, {
+        type: "print_completed",
+        printerId,
+        filename: "Test Notification",
+        timestamp: new Date().toISOString(),
+        durationMinutes: 1,
+      });
+
+      res.json({ success: true, message: `Test notification sent to ${subscriptions.length} subscriber(s)` });
+    } catch (error) {
+      console.error("Failed to send test notification:", error);
+      res.status(500).json({ error: "Failed to send test notification" });
     }
   });
 

@@ -26,17 +26,23 @@ export type PushStatus =
 export function useWebPush(printerId: number | undefined) {
   const [status, setStatus] = useState<PushStatus>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string | null>(null);
 
   const checkSupport = useCallback(() => {
+    const missing: string[] = [];
+    
     if (!("serviceWorker" in navigator)) {
-      setStatus("unsupported");
-      return false;
+      missing.push("Service Worker");
     }
     if (!("PushManager" in window)) {
-      setStatus("unsupported");
-      return false;
+      missing.push("Push Manager");
     }
     if (!("Notification" in window)) {
+      missing.push("Notifications");
+    }
+    
+    if (missing.length > 0) {
+      setDebugInfo(`Not supported: ${missing.join(", ")}. Try installing app to home screen.`);
       setStatus("unsupported");
       return false;
     }
@@ -157,6 +163,7 @@ export function useWebPush(printerId: number | undefined) {
   return {
     status,
     error,
+    debugInfo,
     subscribe,
     unsubscribe,
     isSupported: status !== "unsupported",
