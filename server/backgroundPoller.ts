@@ -5,6 +5,8 @@ import { sendPushNotification } from "./webPush";
 const POLL_INTERVAL_MS = 5000;
 const SNAPMAKER_PORT = 8080;
 
+const reconnectAttempts: Map<number, number> = new Map();
+
 interface PrinterState {
   lastStatus: string;
   printStartTime: Date | null;
@@ -44,6 +46,60 @@ async function snapmakerRequest(
     return null;
   } catch (error) {
     throw error;
+  }
+}
+
+async function pingPrinter(ipAddress: string): Promise<boolean> {
+  try {
+    const url = `http://${ipAddress}:${SNAPMAKER_PORT}/api/v1/status`;
+    const response = await fetch(url, {
+      method: "GET",
+      signal: AbortSignal.timeout(3000),
+    });
+    return response.ok || response.status === 401 || response.status === 403;
+  } catch {
+    return false;
+  }
+}
+
+async function attemptReconnect(printerId: number, ipAddress: string, token: string): Promise<string | null> {
+  try {
+    const url = `http://${ipAddress}:${SNAPMAKER_PORT}/api/v1/connect`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: `token=${token}`,
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (response.status === 204) {
+      console.log(`[BackgroundPoller] Printer ${printerId} requires touchscreen confirmation`);
+      return null;
+    }
+
+    if (response.ok) {
+      const contentType = response.headers.get("content-type");
+      if (contentType?.includes("application/json")) {
+        const data = await response.json();
+        if (data.token) {
+          await storage.updatePrinter(printerId, {
+            token: data.token,
+            isConnected: true,
+            lastSeen: new Date(),
+          });
+          console.log(`[BackgroundPoller] Auto-reconnected printer ${printerId}`);
+          reconnectAttempts.delete(printerId);
+          return data.token;
+        }
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.log(`[BackgroundPoller] Reconnect attempt failed for printer ${printerId}:`, error instanceof Error ? error.message : 'Unknown error');
+    return null;
   }
 }
 
@@ -190,8 +246,22 @@ async function pollAllPrinters(): Promise<void> {
     const printers = await storage.getAllPrinters();
     
     for (const printer of printers) {
-      if (printer.token) {
+      if (printer.token && printer.isConnected) {
         await pollPrinter(printer.id, printer.ipAddress, printer.token);
+      } else if (printer.token && !printer.isConnected) {
+        const isReachable = await pingPrinter(printer.ipAddress);
+        if (isReachable) {
+          const attempts = reconnectAttempts.get(printer.id) || 0;
+          console.log(`[BackgroundPoller] Printer ${printer.id} is reachable but disconnected, attempting reconnect (attempt ${attempts + 1})`);
+          
+          const newToken = await attemptReconnect(printer.id, printer.ipAddress, printer.token);
+          
+          if (newToken) {
+            await pollPrinter(printer.id, printer.ipAddress, newToken);
+          } else {
+            reconnectAttempts.set(printer.id, attempts + 1);
+          }
+        }
       }
     }
   } catch (error) {

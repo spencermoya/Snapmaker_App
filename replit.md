@@ -61,7 +61,7 @@ shared/           # Shared code between frontend/backend
 - Direct HTTP communication with Snapmaker printers on port 8080
 - Endpoints for status polling, connection management, and control commands
 - Token-based authentication for printer connections
-- Auto-reconnect feature: When disconnected, monitors if printer comes online and attempts automatic reconnection using saved token
+- Auto-reconnect feature: Background poller continuously monitors printer availability. When a disconnected printer becomes reachable, automatically attempts reconnection using saved token - works even when app is closed
 - **File tracking workaround**: Snapmaker API doesn't support file listing. Users manually add filenames to track files uploaded via Luban. Files are stored in the `uploadedFiles` database table.
 - **Multiple file upload methods**:
   - Manual upload via file picker in FileList component
