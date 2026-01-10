@@ -74,6 +74,8 @@ shared/           # Shared code between frontend/backend
 - **Background polling**: Server-side polling service runs every 30 seconds to monitor connected printers (see `server/backgroundPoller.ts`)
 - **Print stats tracking**: Automatically detects print start/end events and records completed prints to database with duration and filename
 - **Stats dashboard**: View print statistics by period (Today/Week/Month/All Time) with total print time, print count, and recent print history
+- **Browser notifications**: Get push notifications when prints start or complete (uses Server-Sent Events and browser Notification API)
+- **File list sorting**: Uploaded files are sorted with newest files at the top
 
 ### UI Libraries
 - **Radix UI**: Headless component primitives for accessibility
