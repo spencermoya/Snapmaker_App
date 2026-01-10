@@ -335,7 +335,6 @@ export async function registerRoutes(
 
       await storage.updatePrinter(printerId, {
         isConnected: false,
-        token: null,
       });
 
       res.json({ message: "Disconnected successfully" });
