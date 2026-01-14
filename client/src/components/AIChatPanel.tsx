@@ -57,14 +57,14 @@ export default function AIChatPanel() {
     refetchInterval: 10000,
   });
 
-  // Load messages when conversation changes
+  // Load messages when conversation changes (but not while sending)
   useEffect(() => {
-    if (currentConversationId) {
+    if (currentConversationId && !isSending) {
       loadMessages(currentConversationId);
-    } else {
+    } else if (!currentConversationId) {
       setDisplayMessages([]);
     }
-  }, [currentConversationId]);
+  }, [currentConversationId, isSending]);
 
   // Auto-scroll when messages change
   useEffect(() => {
@@ -113,16 +113,18 @@ export default function AIChatPanel() {
   async function deleteConversation(id: number) {
     try {
       // Clear current conversation first if we're deleting it
-      if (currentConversationId === id) {
+      const wasCurrentConversation = currentConversationId === id;
+      if (wasCurrentConversation) {
         setCurrentConversationId(null);
         setDisplayMessages([]);
       }
       await fetch(`/api/ai/conversations/${id}`, { method: "DELETE" });
       const result = await refetchConversations();
-      // Select another conversation if available
-      if (result.data && result.data.length > 0) {
+      // Select another conversation if available and we deleted the current one
+      if (wasCurrentConversation && result.data && result.data.length > 0) {
         setCurrentConversationId(result.data[0].id);
       }
+      // If no conversations remain, currentConversationId stays null (correct behavior)
     } catch (err) {
       toast.error("Failed to delete conversation");
     }
