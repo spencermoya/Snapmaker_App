@@ -401,12 +401,12 @@ export default function AIChatPanel() {
                     data-testid="input-ai-message"
                   />
                   <Button
-                    type="submit"
+                    type="button"
                     size="icon"
                     disabled={isStreaming || !input.trim()}
                     data-testid="button-send-message"
-                    onClick={(e) => {
-                      e.preventDefault();
+                    onClick={() => {
+                      console.log("Send button clicked, input:", input);
                       sendMessage();
                     }}
                   >
