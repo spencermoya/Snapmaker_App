@@ -211,6 +211,36 @@ sudo crontab -e
 
 This reboots the Pi at midnight, and the app will auto-start thanks to the systemd service.
 
+### AI Assistant Setup (Ollama)
+The app includes a built-in AI assistant that can help troubleshoot printer issues and modify the app's code. It runs locally using Ollama.
+
+```bash
+# Install Ollama on Raspberry Pi
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Start Ollama service
+sudo systemctl enable ollama
+sudo systemctl start ollama
+
+# Download a model (choose one based on your Pi's RAM)
+# For 4GB Pi: Use smaller models
+ollama pull tinyllama      # 1.1B params, ~637MB
+ollama pull phi            # 2.7B params, ~1.6GB
+
+# For 8GB Pi: Can use larger models
+ollama pull llama3.2       # 3B params, ~2GB
+ollama pull mistral        # 7B params, ~4GB
+```
+
+After installing, the AI chat button (robot icon) will appear in the bottom-right corner of the dashboard. The AI can:
+- Answer questions about 3D printing and the app
+- Read and suggest code changes
+- Commit changes to Git and push to GitHub
+- Restart the app after making changes
+
+**Configuring the AI:**
+Go to Settings page to change the Ollama URL (default: http://localhost:11434) and select your model.
+
 ### WiFi Auto-Reconnect
 To ensure your Pi always stays connected to WiFi (auto-reconnects if connection drops):
 

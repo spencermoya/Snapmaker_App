@@ -8,6 +8,7 @@ import FileList from "@/components/FileList";
 import PrintStatsPanel from "@/components/PrintStats";
 import WebcamFeed from "@/components/WebcamFeed";
 import NotificationToggle from "@/components/NotificationToggle";
+import AIChatPanel from "@/components/AIChatPanel";
 import { useNotifications } from "@/hooks/useNotifications";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
@@ -875,6 +876,9 @@ export default function Dashboard() {
           </>
         )}
       </div>
+      
+      {/* AI Chat Panel - Floating button and slide-out panel */}
+      <AIChatPanel />
     </div>
   );
 }

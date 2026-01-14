@@ -1,8 +1,12 @@
 import type { Express, Request, Response } from "express";
 import fs from "fs";
 import path from "path";
+import { exec } from "child_process";
+import { promisify } from "util";
 import { chatStorage } from "./replit_integrations/chat/storage";
 import { storage } from "./storage";
+
+const execAsync = promisify(exec);
 
 const ALLOWED_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".json", ".css", ".html", ".md"];
 const EXCLUDED_DIRS = ["node_modules", ".git", "dist", "build", ".next", "coverage"];
@@ -45,7 +49,15 @@ function listProjectFiles(dir: string, basePath: string = ""): string[] {
 
 function readFileContent(filePath: string): string | null {
   try {
-    const fullPath = path.join(process.cwd(), filePath);
+    const projectRoot = process.cwd();
+    const normalizedPath = path.normalize(filePath).replace(/^(\.\.(\/|\\|$))+/, "");
+    const fullPath = path.resolve(projectRoot, normalizedPath);
+    
+    if (!fullPath.startsWith(projectRoot)) {
+      console.error(`Path traversal blocked: ${filePath}`);
+      return null;
+    }
+    
     if (!fs.existsSync(fullPath)) return null;
     if (!isAllowedFile(filePath)) return null;
     return fs.readFileSync(fullPath, "utf-8");
@@ -57,7 +69,15 @@ function readFileContent(filePath: string): string | null {
 
 function writeFileContent(filePath: string, content: string): boolean {
   try {
-    const fullPath = path.join(process.cwd(), filePath);
+    const projectRoot = process.cwd();
+    const normalizedPath = path.normalize(filePath).replace(/^(\.\.(\/|\\|$))+/, "");
+    const fullPath = path.resolve(projectRoot, normalizedPath);
+    
+    if (!fullPath.startsWith(projectRoot)) {
+      console.error(`Path traversal blocked: ${filePath}`);
+      return false;
+    }
+    
     const dir = path.dirname(fullPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -482,6 +502,118 @@ Format your response clearly.`;
     } catch (error) {
       console.error("Error reverting changes:", error);
       res.status(500).json({ error: "Failed to revert changes" });
+    }
+  });
+
+  app.post("/api/ai/git/commit", async (req: Request, res: Response) => {
+    try {
+      const { message } = req.body;
+      
+      if (!message) {
+        return res.status(400).json({ error: "Commit message required" });
+      }
+
+      const sanitizedMessage = message
+        .replace(/[`$\\]/g, "")
+        .replace(/\n/g, " ")
+        .slice(0, 200);
+      
+      if (!sanitizedMessage.trim()) {
+        return res.status(400).json({ error: "Invalid commit message" });
+      }
+
+      await execAsync("git add -A", { cwd: process.cwd() });
+      
+      const { spawn } = await import("child_process");
+      
+      await new Promise<void>((resolve, reject) => {
+        const gitCommit = spawn("git", ["commit", "-m", sanitizedMessage], { cwd: process.cwd() });
+        let stdout = "";
+        let stderr = "";
+        
+        gitCommit.stdout.on("data", (data) => { stdout += data.toString(); });
+        gitCommit.stderr.on("data", (data) => { stderr += data.toString(); });
+        
+        gitCommit.on("close", (code) => {
+          if (code === 0) {
+            resolve();
+          } else if (stderr.includes("nothing to commit") || stdout.includes("nothing to commit")) {
+            resolve();
+          } else {
+            reject(new Error(stderr || stdout || "Commit failed"));
+          }
+        });
+      });
+      
+      res.json({ 
+        success: true, 
+        message: "Changes committed",
+      });
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : "Unknown error";
+      if (errorMsg.includes("nothing to commit")) {
+        return res.json({ success: true, message: "No changes to commit" });
+      }
+      console.error("Git commit error:", error);
+      res.status(500).json({ error: `Failed to commit: ${errorMsg}` });
+    }
+  });
+
+  app.post("/api/ai/git/push", async (req: Request, res: Response) => {
+    try {
+      const { stdout, stderr } = await execAsync("git push", { cwd: process.cwd() });
+      
+      res.json({ 
+        success: true, 
+        message: "Pushed to GitHub",
+        output: stdout || stderr,
+      });
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : "Unknown error";
+      console.error("Git push error:", error);
+      res.status(500).json({ error: `Failed to push: ${errorMsg}` });
+    }
+  });
+
+  app.get("/api/ai/git/status", async (req: Request, res: Response) => {
+    try {
+      const { stdout: statusOutput } = await execAsync("git status --short", { cwd: process.cwd() });
+      const { stdout: branchOutput } = await execAsync("git branch --show-current", { cwd: process.cwd() });
+      
+      const changes = statusOutput.trim().split("\n").filter(Boolean).map(line => ({
+        status: line.substring(0, 2).trim(),
+        file: line.substring(3),
+      }));
+      
+      res.json({ 
+        branch: branchOutput.trim(),
+        changes,
+        hasChanges: changes.length > 0,
+      });
+    } catch (error) {
+      console.error("Git status error:", error);
+      res.status(500).json({ error: "Failed to get git status" });
+    }
+  });
+
+  app.post("/api/ai/restart", async (req: Request, res: Response) => {
+    try {
+      res.json({ 
+        success: true, 
+        message: "Rebuilding and restarting app. This may take a minute.",
+      });
+      
+      setTimeout(async () => {
+        try {
+          await execAsync("npm run build", { cwd: process.cwd(), timeout: 120000 });
+          exec("sudo systemctl restart snapmaker", { cwd: process.cwd() });
+        } catch (error) {
+          console.error("Restart error:", error);
+        }
+      }, 100);
+    } catch (error) {
+      console.error("Restart error:", error);
+      res.status(500).json({ error: "Failed to restart app" });
     }
   });
 }
