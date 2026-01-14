@@ -443,44 +443,43 @@ export default function AIChatPanel() {
               </div>
             </ScrollArea>
 
-            {/* Input area - REBUILT FOR RELIABILITY */}
-            <div className="p-4 border-t">
+            {/* Input area - FORM-BASED FOR iOS SAFARI RELIABILITY */}
+            <form 
+              className="p-4 border-t"
+              onSubmit={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!isSending && inputText.trim()) {
+                  handleSendMessage();
+                }
+              }}
+            >
               <div className="flex gap-2">
                 <Input
                   type="text"
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendMessage();
-                    }
-                  }}
                   placeholder="Type your message..."
                   disabled={isSending}
+                  autoComplete="off"
+                  autoCorrect="off"
                   data-testid="input-ai-message"
                 />
-                <Button
-                  type="button"
-                  size="icon"
+                <button
+                  type="submit"
                   disabled={isSending || !inputText.trim()}
-                  onClick={handleSendMessage}
-                  onTouchEnd={(e) => {
-                    e.preventDefault();
-                    if (!isSending && inputText.trim()) {
-                      handleSendMessage();
-                    }
-                  }}
+                  className="inline-flex items-center justify-center h-12 w-12 min-w-[48px] min-h-[48px] rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none"
+                  style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                   data-testid="button-send-message"
                 >
                   {isSending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className="h-5 w-5 animate-spin" />
                   ) : (
-                    <Send className="h-4 w-4" />
+                    <Send className="h-5 w-5" />
                   )}
-                </Button>
+                </button>
               </div>
-            </div>
+            </form>
           </TabsContent>
 
           {/* GIT TAB */}
