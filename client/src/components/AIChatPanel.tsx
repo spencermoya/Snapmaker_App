@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bot, Send, X, Plus, Trash2, FileCode, GitBranch, GitCommit, Upload, RefreshCw, Loader2, AlertCircle, Check } from "lucide-react";
+import { Bot, Send, Plus, Trash2, GitBranch, GitCommit, Upload, RefreshCw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface Message {
@@ -30,206 +30,271 @@ interface GitStatus {
 
 export default function AIChatPanel() {
   const [open, setOpen] = useState(false);
-  const [input, setInput] = useState("");
-  const [activeConversation, setActiveConversation] = useState<number | null>(null);
-  const [streamingMessage, setStreamingMessage] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [commitMessage, setCommitMessage] = useState("");
+  const [inputText, setInputText] = useState("");
+  const [currentConversationId, setCurrentConversationId] = useState<number | null>(null);
+  const [displayMessages, setDisplayMessages] = useState<Message[]>([]);
+  const [streamingText, setStreamingText] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [commitMsg, setCommitMsg] = useState("");
+  const [isCommitting, setIsCommitting] = useState(false);
+  const [isPushing, setIsPushing] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const queryClient = useQueryClient();
 
+  // Fetch AI status
   const { data: aiStatus } = useQuery<{ connected: boolean; url: string; model: string; error?: string }>({
     queryKey: ["/api/ai/status"],
     refetchInterval: 30000,
   });
 
-  const { data: conversations = [] } = useQuery<Conversation[]>({
+  // Fetch conversations list
+  const { data: conversationsList = [], refetch: refetchConversations } = useQuery<Conversation[]>({
     queryKey: ["/api/ai/conversations"],
   });
 
-  const { data: conversationData } = useQuery<Conversation & { messages: Message[] }>({
-    queryKey: ["/api/ai/conversations", activeConversation],
-    enabled: !!activeConversation,
-  });
-
+  // Fetch git status
   const { data: gitStatus, refetch: refetchGit } = useQuery<GitStatus>({
     queryKey: ["/api/ai/git/status"],
     refetchInterval: 10000,
   });
 
-  const messages = conversationData?.messages || [];
+  // Load messages when conversation changes
+  useEffect(() => {
+    if (currentConversationId) {
+      loadMessages(currentConversationId);
+    } else {
+      setDisplayMessages([]);
+    }
+  }, [currentConversationId]);
 
-  const createConversation = useMutation({
-    mutationFn: async () => {
+  // Auto-scroll when messages change
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [displayMessages, streamingText]);
+
+  // Select first conversation when panel opens
+  useEffect(() => {
+    if (open && conversationsList.length > 0 && !currentConversationId) {
+      setCurrentConversationId(conversationsList[0].id);
+    }
+  }, [open, conversationsList, currentConversationId]);
+
+  async function loadMessages(convId: number) {
+    try {
+      const res = await fetch(`/api/ai/conversations/${convId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDisplayMessages(data.messages || []);
+      }
+    } catch (err) {
+      console.error("Failed to load messages:", err);
+    }
+  }
+
+  async function createNewConversation(): Promise<number | null> {
+    try {
       const res = await fetch("/api/ai/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: "New Chat" }),
       });
       if (!res.ok) throw new Error("Failed to create conversation");
-      return res.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/ai/conversations"] });
-      setActiveConversation(data.id);
-    },
-  });
+      const data = await res.json();
+      await refetchConversations();
+      return data.id;
+    } catch (err) {
+      console.error("Failed to create conversation:", err);
+      toast.error("Failed to create conversation");
+      return null;
+    }
+  }
 
-  const deleteConversation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await fetch(`/api/ai/conversations/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/ai/conversations"] });
-      if (conversations.length > 1) {
-        setActiveConversation(conversations.find(c => c.id !== activeConversation)?.id || null);
-      } else {
-        setActiveConversation(null);
+  async function deleteConversation(id: number) {
+    try {
+      // Clear current conversation first if we're deleting it
+      if (currentConversationId === id) {
+        setCurrentConversationId(null);
+        setDisplayMessages([]);
       }
-    },
-  });
+      await fetch(`/api/ai/conversations/${id}`, { method: "DELETE" });
+      const result = await refetchConversations();
+      // Select another conversation if available
+      if (result.data && result.data.length > 0) {
+        setCurrentConversationId(result.data[0].id);
+      }
+    } catch (err) {
+      toast.error("Failed to delete conversation");
+    }
+  }
 
-  const gitCommit = useMutation({
-    mutationFn: async (message: string) => {
-      const res = await fetch("/api/ai/git/commit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
-      });
-      if (!res.ok) throw new Error("Failed to commit");
-      return res.json();
-    },
-    onSuccess: (data) => {
-      toast.success(data.message);
-      setCommitMessage("");
-      refetchGit();
-    },
-    onError: (error: Error) => {
-      toast.error(error.message);
-    },
-  });
+  // THE MAIN SEND FUNCTION - completely rebuilt
+  async function handleSendMessage() {
+    const messageText = inputText.trim();
+    
+    // Validate input
+    if (!messageText) {
+      toast.error("Please type a message first");
+      return;
+    }
+    
+    if (isSending) {
+      toast.error("Already sending a message");
+      return;
+    }
 
-  const gitPush = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/ai/git/push", { method: "POST" });
-      if (!res.ok) throw new Error("Failed to push");
-      return res.json();
-    },
-    onSuccess: (data) => {
-      toast.success(data.message);
-      refetchGit();
-    },
-    onError: (error: Error) => {
-      toast.error(error.message);
-    },
-  });
-
-  const restartApp = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/ai/restart", { method: "POST" });
-      if (!res.ok) throw new Error("Failed to restart");
-      return res.json();
-    },
-    onSuccess: (data) => {
-      toast.success(data.message);
-    },
-    onError: (error: Error) => {
-      toast.error(error.message);
-    },
-  });
-
-  const sendMessage = async () => {
-    if (!input.trim() || isStreaming) return;
-
-    const userMessage = input;
-    setInput("");
-    setIsStreaming(true);
-    setStreamingMessage("");
+    // Clear input immediately for responsive feel
+    setInputText("");
+    setIsSending(true);
+    setStreamingText("");
 
     try {
-      let conversationId = activeConversation;
-      
-      if (!conversationId) {
-        const createRes = await fetch("/api/ai/conversations", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: "New Chat" }),
-        });
-        if (!createRes.ok) {
-          throw new Error("Failed to create conversation");
+      // Get or create conversation
+      let convId = currentConversationId;
+      if (!convId) {
+        convId = await createNewConversation();
+        if (!convId) {
+          setIsSending(false);
+          setInputText(messageText); // Restore input on failure
+          return;
         }
-        const newConversation = await createRes.json();
-        conversationId = newConversation.id;
-        setActiveConversation(conversationId);
-        queryClient.invalidateQueries({ queryKey: ["/api/ai/conversations"] });
+        setCurrentConversationId(convId);
       }
 
-      const response = await fetch(`/api/ai/conversations/${conversationId}/messages`, {
+      // Add user message to display immediately
+      const userMessage: Message = {
+        id: Date.now(),
+        role: "user",
+        content: messageText,
+        createdAt: new Date().toISOString(),
+      };
+      setDisplayMessages(prev => [...prev, userMessage]);
+
+      // Send to API
+      const response = await fetch(`/api/ai/conversations/${convId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: userMessage }),
+        body: JSON.stringify({ content: messageText }),
       });
 
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to send message");
+      }
+
+      // Handle streaming response
       const reader = response.body?.getReader();
-      if (!reader) throw new Error("No reader");
+      if (!reader) {
+        throw new Error("No response stream available");
+      }
 
       const decoder = new TextDecoder();
-      let fullMessage = "";
+      let fullResponse = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         const chunk = decoder.decode(value);
-        const lines = chunk.split("\n").filter(Boolean);
+        const lines = chunk.split("\n").filter(line => line.trim());
 
         for (const line of lines) {
           if (line.startsWith("data: ")) {
             try {
-              const data = JSON.parse(line.slice(6));
-              if (data.content) {
-                fullMessage += data.content;
-                setStreamingMessage(fullMessage);
+              const jsonData = JSON.parse(line.slice(6));
+              if (jsonData.content) {
+                fullResponse += jsonData.content;
+                setStreamingText(fullResponse);
               }
-              if (data.error) {
-                toast.error(data.error);
+              if (jsonData.error) {
+                toast.error(jsonData.error);
               }
-            } catch {}
+            } catch (parseErr) {
+              // Ignore parse errors for incomplete JSON
+            }
           }
         }
       }
 
-      queryClient.invalidateQueries({ queryKey: ["/api/ai/conversations", conversationId] });
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to send message");
+      // Add assistant message to display (no need to reload from server)
+      if (fullResponse) {
+        const assistantMessage: Message = {
+          id: Date.now() + 1,
+          role: "assistant",
+          content: fullResponse,
+          createdAt: new Date().toISOString(),
+        };
+        setDisplayMessages(prev => [...prev, assistantMessage]);
+      }
+
+    } catch (err: any) {
+      console.error("Send message error:", err);
+      toast.error(err.message || "Failed to send message to AI");
     } finally {
-      setIsStreaming(false);
-      setStreamingMessage("");
+      setIsSending(false);
+      setStreamingText("");
     }
-  };
+  }
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  async function handleGitCommit() {
+    if (!commitMsg.trim()) {
+      toast.error("Please enter a commit message");
+      return;
     }
-  }, [messages, streamingMessage]);
-
-  useEffect(() => {
-    if (open && conversations.length === 0) {
-      createConversation.mutate();
-    } else if (open && !activeConversation && conversations.length > 0) {
-      setActiveConversation(conversations[0].id);
+    setIsCommitting(true);
+    try {
+      const res = await fetch("/api/ai/git/commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: commitMsg }),
+      });
+      if (!res.ok) throw new Error("Failed to commit");
+      const data = await res.json();
+      toast.success(data.message || "Committed successfully");
+      setCommitMsg("");
+      refetchGit();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to commit");
+    } finally {
+      setIsCommitting(false);
     }
-  }, [open, conversations]);
+  }
 
-  const formatMessage = (content: string) => {
-    const codeBlockRegex = /```(\w+)?:?([\w./]*)\n([\s\S]*?)```/g;
+  async function handleGitPush() {
+    setIsPushing(true);
+    try {
+      const res = await fetch("/api/ai/git/push", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to push");
+      const data = await res.json();
+      toast.success(data.message || "Pushed successfully");
+      refetchGit();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to push");
+    } finally {
+      setIsPushing(false);
+    }
+  }
+
+  async function handleAppRestart() {
+    try {
+      const res = await fetch("/api/ai/restart", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to restart");
+      const data = await res.json();
+      toast.success(data.message || "App restarting...");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to restart app");
+    }
+  }
+
+  function formatMessageContent(content: string) {
+    // Simple code block formatting
+    const codeBlockRegex = /```(\w+)?\n?([\s\S]*?)```/g;
     const parts: React.ReactNode[] = [];
     let lastIndex = 0;
     let match;
 
     while ((match = codeBlockRegex.exec(content)) !== null) {
+      // Add text before code block
       if (match.index > lastIndex) {
         parts.push(
           <span key={lastIndex} className="whitespace-pre-wrap">
@@ -238,23 +303,18 @@ export default function AIChatPanel() {
         );
       }
 
-      const [, lang, filePath, code] = match;
+      // Add code block
+      const [, lang, code] = match;
       parts.push(
-        <div key={match.index} className="my-2 rounded-md bg-zinc-900 overflow-hidden">
-          {(lang || filePath) && (
-            <div className="flex items-center gap-2 px-3 py-1 bg-zinc-800 text-xs text-zinc-400">
-              <FileCode className="h-3 w-3" />
-              {filePath || lang}
-            </div>
-          )}
-          <pre className="p-3 text-xs overflow-x-auto">
-            <code>{code.trim()}</code>
-          </pre>
-        </div>
+        <pre key={match.index} className="bg-zinc-900 rounded p-2 my-2 overflow-x-auto text-xs">
+          <code className={lang ? `language-${lang}` : ""}>{code.trim()}</code>
+        </pre>
       );
+
       lastIndex = match.index + match[0].length;
     }
 
+    // Add remaining text
     if (lastIndex < content.length) {
       parts.push(
         <span key={lastIndex} className="whitespace-pre-wrap">
@@ -264,265 +324,263 @@ export default function AIChatPanel() {
     }
 
     return parts.length > 0 ? parts : <span className="whitespace-pre-wrap">{content}</span>;
-  };
+  }
 
   return (
-    <>
-      <Button
-        onClick={() => setOpen(true)}
-        className="fixed bottom-4 right-4 h-14 w-14 rounded-full shadow-lg z-50"
-        size="icon"
-        data-testid="button-ai-chat"
-      >
-        <Bot className="h-6 w-6" />
-      </Button>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <Button
+          size="icon"
+          className="fixed bottom-4 right-4 h-14 w-14 rounded-full shadow-lg z-50"
+          data-testid="button-open-ai-chat"
+        >
+          <Bot className="h-6 w-6" />
+        </Button>
+      </SheetTrigger>
 
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="right" className="w-full sm:w-[480px] p-0 flex flex-col">
-          <SheetHeader className="p-4 border-b">
-            <div className="flex items-center justify-between">
-              <SheetTitle className="flex items-center gap-2">
-                <Bot className="h-5 w-5" />
-                AI Assistant
-                {aiStatus?.connected ? (
-                  <Badge variant="outline" className="text-green-500 border-green-500/50">
-                    <Check className="h-3 w-3 mr-1" /> Online
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="text-red-500 border-red-500/50">
-                    <AlertCircle className="h-3 w-3 mr-1" /> Offline
-                  </Badge>
-                )}
-              </SheetTitle>
-            </div>
-          </SheetHeader>
+      <SheetContent side="right" className="w-full sm:w-[440px] p-0 flex flex-col">
+        <SheetHeader className="p-4 border-b">
+          <div className="flex items-center justify-between">
+            <SheetTitle className="flex items-center gap-2">
+              <Bot className="h-5 w-5" />
+              AI Assistant
+            </SheetTitle>
+            <Badge variant={aiStatus?.connected ? "default" : "secondary"}>
+              {aiStatus?.connected ? "Online" : "Offline"}
+            </Badge>
+          </div>
+        </SheetHeader>
 
-          <Tabs defaultValue="chat" className="flex-1 flex flex-col overflow-hidden">
-            <TabsList className="mx-4 mt-2">
-              <TabsTrigger value="chat" className="flex-1">Chat</TabsTrigger>
-              <TabsTrigger value="git" className="flex-1">
-                <GitBranch className="h-4 w-4 mr-1" />
-                Git
-                {gitStatus?.hasChanges && (
-                  <span className="ml-1 h-2 w-2 rounded-full bg-amber-500" />
-                )}
-              </TabsTrigger>
-            </TabsList>
+        <Tabs defaultValue="chat" className="flex-1 flex flex-col overflow-hidden">
+          <TabsList className="mx-4 mt-2">
+            <TabsTrigger value="chat">Chat</TabsTrigger>
+            <TabsTrigger value="git">Git</TabsTrigger>
+          </TabsList>
 
-            <TabsContent value="chat" className="flex-1 flex flex-col overflow-hidden m-0 mt-2">
-              <div className="flex gap-2 px-4 pb-2 border-b overflow-x-auto">
-                {conversations.map((conv) => (
-                  <div
-                    key={conv.id}
-                    className={`shrink-0 text-xs flex items-center gap-1 px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
-                      activeConversation === conv.id 
-                        ? "bg-secondary text-secondary-foreground" 
-                        : "hover:bg-accent hover:text-accent-foreground"
-                    }`}
-                    onClick={() => setActiveConversation(conv.id)}
+          {/* CHAT TAB */}
+          <TabsContent value="chat" className="flex-1 flex flex-col overflow-hidden m-0">
+            {/* Conversation selector */}
+            <div className="p-2 border-b flex items-center gap-2 overflow-x-auto">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  const newId = await createNewConversation();
+                  if (newId) setCurrentConversationId(newId);
+                }}
+                data-testid="button-new-conversation"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                New
+              </Button>
+              {conversationsList.map(conv => (
+                <div key={conv.id} className="flex items-center gap-1">
+                  <Button
+                    variant={currentConversationId === conv.id ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setCurrentConversationId(conv.id)}
+                    data-testid={`button-conversation-${conv.id}`}
                   >
                     {conv.title}
-                    <button
-                      className="ml-1 hover:text-red-500"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteConversation.mutate(conv.id);
-                      }}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => deleteConversation(conv.id)}
+                    data-testid={`button-delete-conversation-${conv.id}`}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            {/* Messages area */}
+            <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+              <div className="space-y-4">
+                {displayMessages.map((msg) => (
+                  <div
+                    key={msg.id}
+                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                        msg.role === "user"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted"
+                      }`}
                     >
-                      <X className="h-3 w-3" />
-                    </button>
+                      {formatMessageContent(msg.content)}
+                    </div>
                   </div>
                 ))}
+
+                {/* Streaming message */}
+                {streamingText && (
+                  <div className="flex justify-start">
+                    <div className="max-w-[85%] rounded-lg px-3 py-2 text-sm bg-muted">
+                      {formatMessageContent(streamingText)}
+                      <span className="inline-block w-2 h-4 ml-1 bg-primary animate-pulse" />
+                    </div>
+                  </div>
+                )}
+
+                {/* Empty state */}
+                {displayMessages.length === 0 && !streamingText && (
+                  <div className="text-center text-muted-foreground py-8">
+                    <Bot className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p className="text-sm">Ask me to help with printer issues or app changes.</p>
+                    {!aiStatus?.connected && (
+                      <p className="text-xs text-amber-500 mt-2">
+                        Ollama not connected. Make sure it's running on your Pi.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+
+            {/* Input area - REBUILT FOR RELIABILITY */}
+            <div className="p-4 border-t">
+              <div className="flex gap-2">
+                <Input
+                  type="text"
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  placeholder="Type your message..."
+                  disabled={isSending}
+                  data-testid="input-ai-message"
+                />
                 <Button
-                  variant="ghost"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={() => createConversation.mutate()}
+                  type="button"
+                  size="icon"
+                  disabled={isSending || !inputText.trim()}
+                  onClick={handleSendMessage}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    if (!isSending && inputText.trim()) {
+                      handleSendMessage();
+                    }
+                  }}
+                  data-testid="button-send-message"
                 >
-                  <Plus className="h-4 w-4" />
+                  {isSending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* GIT TAB */}
+          <TabsContent value="git" className="flex-1 flex flex-col overflow-hidden m-0 p-4">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <GitBranch className="h-4 w-4" />
+                  <span className="text-sm font-medium">{gitStatus?.branch || "main"}</span>
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => refetchGit()}>
+                  <RefreshCw className="h-4 w-4" />
                 </Button>
               </div>
 
-              <ScrollArea className="flex-1 p-4" ref={scrollRef}>
-                <div className="space-y-4">
-                  {messages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                    >
-                      <div
-                        className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-                          msg.role === "user"
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted"
-                        }`}
+              {gitStatus?.hasChanges ? (
+                <>
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider">
+                      Changed Files ({gitStatus.changes.length})
+                    </p>
+                    <ScrollArea className="h-32 rounded-md border p-2">
+                      {gitStatus.changes.map((change, i) => (
+                        <div key={i} className="flex items-center gap-2 text-xs py-1">
+                          <span
+                            className={`font-mono ${
+                              change.status === "M"
+                                ? "text-amber-500"
+                                : change.status === "A"
+                                ? "text-green-500"
+                                : change.status === "D"
+                                ? "text-red-500"
+                                : ""
+                            }`}
+                          >
+                            {change.status}
+                          </span>
+                          <span className="truncate">{change.file}</span>
+                        </div>
+                      ))}
+                    </ScrollArea>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Input
+                      value={commitMsg}
+                      onChange={(e) => setCommitMsg(e.target.value)}
+                      placeholder="Commit message..."
+                      data-testid="input-commit-message"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        className="flex-1"
+                        onClick={handleGitCommit}
+                        disabled={isCommitting || !commitMsg.trim()}
+                        data-testid="button-git-commit"
                       >
-                        {formatMessage(msg.content)}
-                      </div>
+                        {isCommitting ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <GitCommit className="h-4 w-4 mr-2" />
+                        )}
+                        Commit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={handleGitPush}
+                        disabled={isPushing}
+                        data-testid="button-git-push"
+                      >
+                        {isPushing ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Upload className="h-4 w-4 mr-2" />
+                        )}
+                        Push
+                      </Button>
                     </div>
-                  ))}
-                  {streamingMessage && (
-                    <div className="flex justify-start">
-                      <div className="max-w-[85%] rounded-lg px-3 py-2 text-sm bg-muted">
-                        {formatMessage(streamingMessage)}
-                        <span className="inline-block w-2 h-4 ml-1 bg-primary animate-pulse" />
-                      </div>
-                    </div>
-                  )}
-                  {messages.length === 0 && !streamingMessage && (
-                    <div className="text-center text-muted-foreground py-8">
-                      <Bot className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p className="text-sm">
-                        Ask me to help with printer issues or app changes.
-                      </p>
-                      {!aiStatus?.connected && (
-                        <p className="text-xs text-amber-500 mt-2">
-                          Ollama not connected. Make sure it's running.
-                        </p>
-                      )}
-                    </div>
-                  )}
+                  </div>
+                </>
+              ) : (
+                <div className="text-center text-muted-foreground py-8">
+                  <GitBranch className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No changes to commit</p>
                 </div>
-              </ScrollArea>
+              )}
 
-              <div className="p-4 border-t">
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    sendMessage();
-                  }}
-                  className="flex gap-2"
+              <div className="pt-4 border-t">
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={handleAppRestart}
+                  data-testid="button-restart-app"
                 >
-                  <Input
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder="Ask anything..."
-                    disabled={isStreaming}
-                    data-testid="input-ai-message"
-                  />
-                  <Button
-                    type="button"
-                    size="icon"
-                    disabled={isStreaming || !input.trim()}
-                    data-testid="button-send-message"
-                    onClick={() => {
-                      console.log("Send button clicked, input:", input);
-                      sendMessage();
-                    }}
-                  >
-                    {isStreaming ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Send className="h-4 w-4" />
-                    )}
-                  </Button>
-                </form>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Restart App
+                </Button>
               </div>
-            </TabsContent>
-
-            <TabsContent value="git" className="flex-1 flex flex-col overflow-hidden m-0 p-4">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <GitBranch className="h-4 w-4" />
-                    <span className="text-sm font-medium">{gitStatus?.branch || "main"}</span>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => refetchGit()}
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                  </Button>
-                </div>
-
-                {gitStatus?.hasChanges ? (
-                  <>
-                    <div className="space-y-2">
-                      <p className="text-xs text-muted-foreground uppercase tracking-wider">
-                        Changed Files ({gitStatus.changes.length})
-                      </p>
-                      <ScrollArea className="h-32 rounded-md border p-2">
-                        {gitStatus.changes.map((change, i) => (
-                          <div key={i} className="flex items-center gap-2 text-xs py-1">
-                            <span className={`font-mono ${
-                              change.status === "M" ? "text-amber-500" :
-                              change.status === "A" ? "text-green-500" :
-                              change.status === "D" ? "text-red-500" : ""
-                            }`}>
-                              {change.status}
-                            </span>
-                            <span className="truncate">{change.file}</span>
-                          </div>
-                        ))}
-                      </ScrollArea>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Input
-                        value={commitMessage}
-                        onChange={(e) => setCommitMessage(e.target.value)}
-                        placeholder="Commit message..."
-                        data-testid="input-commit-message"
-                      />
-                      <div className="flex gap-2">
-                        <Button
-                          onClick={() => gitCommit.mutate(commitMessage)}
-                          disabled={!commitMessage.trim() || gitCommit.isPending}
-                          className="flex-1"
-                          data-testid="button-git-commit"
-                        >
-                          {gitCommit.isPending ? (
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <GitCommit className="h-4 w-4 mr-2" />
-                          )}
-                          Commit
-                        </Button>
-                        <Button
-                          onClick={() => gitPush.mutate()}
-                          disabled={gitPush.isPending}
-                          variant="outline"
-                          data-testid="button-git-push"
-                        >
-                          {gitPush.isPending ? (
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <Upload className="h-4 w-4 mr-2" />
-                          )}
-                          Push
-                        </Button>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-center text-muted-foreground py-8">
-                    <Check className="h-8 w-8 mx-auto mb-2 text-green-500" />
-                    <p className="text-sm">All changes committed</p>
-                  </div>
-                )}
-
-                <div className="pt-4 border-t">
-                  <Button
-                    onClick={() => restartApp.mutate()}
-                    disabled={restartApp.isPending}
-                    variant="outline"
-                    className="w-full"
-                    data-testid="button-restart-app"
-                  >
-                    {restartApp.isPending ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                    )}
-                    Rebuild & Restart App
-                  </Button>
-                </div>
-              </div>
-            </TabsContent>
-          </Tabs>
-        </SheetContent>
-      </Sheet>
-    </>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </SheetContent>
+    </Sheet>
   );
 }
