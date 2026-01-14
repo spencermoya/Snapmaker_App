@@ -38,6 +38,7 @@ export default function AIChatPanel() {
   const [commitMsg, setCommitMsg] = useState("");
   const [isCommitting, setIsCommitting] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
+  const [isButtonPressed, setIsButtonPressed] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Fetch AI status
@@ -468,8 +469,18 @@ export default function AIChatPanel() {
                 <button
                   type="submit"
                   disabled={isSending || !inputText.trim()}
-                  className="inline-flex items-center justify-center h-12 w-12 min-w-[48px] min-h-[48px] rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none"
-                  style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                  className="inline-flex items-center justify-center h-12 w-12 min-w-[48px] min-h-[48px] rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none transition-transform duration-100"
+                  style={{ 
+                    touchAction: 'manipulation', 
+                    WebkitTapHighlightColor: 'transparent',
+                    transform: isButtonPressed ? 'scale(0.75)' : 'scale(1)',
+                  }}
+                  onTouchStart={() => setIsButtonPressed(true)}
+                  onTouchEnd={() => setIsButtonPressed(false)}
+                  onTouchCancel={() => setIsButtonPressed(false)}
+                  onMouseDown={() => setIsButtonPressed(true)}
+                  onMouseUp={() => setIsButtonPressed(false)}
+                  onMouseLeave={() => setIsButtonPressed(false)}
                   data-testid="button-send-message"
                 >
                   {isSending ? (
