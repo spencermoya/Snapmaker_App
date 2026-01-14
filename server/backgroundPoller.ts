@@ -49,32 +49,15 @@ async function snapmakerRequest(
   }
 }
 
-async function pingPrinter(ipAddress: string, attempt: number = 1): Promise<boolean> {
-  const maxAttempts = 2;
-  const timeoutMs = 6000;
-  
+async function pingPrinter(ipAddress: string): Promise<boolean> {
   try {
     const url = `http://${ipAddress}:${SNAPMAKER_PORT}/api/v1/status`;
     const response = await fetch(url, {
       method: "GET",
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.timeout(3000),
     });
-    
-    const isReachable = response.ok || response.status === 400 || response.status === 401 || response.status === 403;
-    if (isReachable) {
-      console.log(`[BackgroundPoller] Ping ${ipAddress}: SUCCESS (status ${response.status})`);
-    }
-    return isReachable;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
-    if (attempt < maxAttempts) {
-      console.log(`[BackgroundPoller] Ping ${ipAddress}: attempt ${attempt} failed (${errorMessage}), retrying...`);
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      return pingPrinter(ipAddress, attempt + 1);
-    }
-    
-    console.log(`[BackgroundPoller] Ping ${ipAddress}: FAILED after ${maxAttempts} attempts (${errorMessage})`);
+    return response.ok || response.status === 401 || response.status === 403;
+  } catch {
     return false;
   }
 }

@@ -88,33 +88,6 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const homekitDevices = pgTable("homekit_devices", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  deviceId: text("device_id").notNull().unique(),
-  ipAddress: text("ip_address"),
-  port: integer("port"),
-  pairingData: text("pairing_data"),
-  isPaired: boolean("is_paired").default(false),
-  deviceType: text("device_type").default("outlet"),
-  lastSeen: timestamp("last_seen"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const scheduledPrints = pgTable("scheduled_prints", {
-  id: serial("id").primaryKey(),
-  printerId: integer("printer_id").references(() => printers.id).notNull(),
-  fileId: integer("file_id").references(() => uploadedFiles.id).notNull(),
-  scheduledTime: timestamp("scheduled_time").notNull(),
-  smartPlugId: integer("smart_plug_id"),
-  homekitDeviceId: integer("homekit_device_id"),
-  printerWarmupMinutes: integer("printer_warmup_minutes").default(2),
-  status: text("status").default("pending"),
-  executedAt: timestamp("executed_at"),
-  errorMessage: text("error_message"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
 export const insertPrinterSchema = createInsertSchema(printers).omit({
   id: true,
   lastSeen: true,
@@ -161,20 +134,6 @@ export const insertPushSubscriptionSchema = createInsertSchema(pushSubscriptions
   createdAt: true,
 });
 
-export const insertHomekitDeviceSchema = createInsertSchema(homekitDevices).omit({
-  id: true,
-  createdAt: true,
-  lastSeen: true,
-});
-
-export const insertScheduledPrintSchema = createInsertSchema(scheduledPrints).omit({
-  id: true,
-  createdAt: true,
-  executedAt: true,
-  errorMessage: true,
-  status: true,
-});
-
 export const DEFAULT_ENABLED_MODULES = [
   "status",
   "webcam", 
@@ -182,7 +141,6 @@ export const DEFAULT_ENABLED_MODULES = [
   "jogControls",
   "jobControls",
   "fileList",
-  "scheduledPrints",
   "stats",
 ];
 
@@ -204,10 +162,6 @@ export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type PushSubscription = typeof pushSubscriptions.$inferSelect;
 export type InsertPushSubscription = z.infer<typeof insertPushSubscriptionSchema>;
-export type HomekitDevice = typeof homekitDevices.$inferSelect;
-export type InsertHomekitDevice = z.infer<typeof insertHomekitDeviceSchema>;
-export type ScheduledPrint = typeof scheduledPrints.$inferSelect;
-export type InsertScheduledPrint = z.infer<typeof insertScheduledPrintSchema>;
 
 export type PrinterStatus = {
   state: string;

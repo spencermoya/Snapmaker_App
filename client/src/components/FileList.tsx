@@ -3,8 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { FileCode, Play, RefreshCw, Upload, Trash2, Info, AlertCircle, X, Calendar, FolderInput, Clock, Download, Layers, CalendarClock } from "lucide-react";
-import SchedulePrintDialog from "./SchedulePrintDialog";
+import { FileCode, Play, RefreshCw, Upload, Trash2, Info, AlertCircle, X, Calendar, FolderInput, Clock, Download, Layers } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useState, useRef, useCallback, useMemo } from "react";
@@ -463,30 +462,6 @@ export default function FileList({ printerId }: FileListProps) {
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
-                      {printerId && (
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <SchedulePrintDialog
-                                printerId={printerId}
-                                preSelectedFileId={file.id}
-                                trigger={
-                                  <Button 
-                                    size="icon" 
-                                    variant="ghost" 
-                                    className="h-7 w-7 text-amber-500 hover:text-amber-500 hover:bg-amber-500/10"
-                                    disabled={!file.fileContent}
-                                    data-testid={`button-schedule-${file.id}`}
-                                  >
-                                    <CalendarClock className="h-3.5 w-3.5" />
-                                  </Button>
-                                }
-                              />
-                            </TooltipTrigger>
-                            <TooltipContent>Schedule Print</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      )}
                       <Button 
                         size="icon" 
                         variant="ghost" 

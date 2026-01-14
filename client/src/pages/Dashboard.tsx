@@ -7,10 +7,8 @@ import JogControls from "@/components/JogControls";
 import FileList from "@/components/FileList";
 import PrintStatsPanel from "@/components/PrintStats";
 import WebcamFeed from "@/components/WebcamFeed";
-import ScheduledPrintsPanel from "@/components/ScheduledPrintsPanel";
 import NotificationToggle from "@/components/NotificationToggle";
 import { useNotifications } from "@/hooks/useNotifications";
-import { useAdaptivePolling, useVisibility } from "@/hooks/useAdaptivePolling";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -36,7 +34,6 @@ const MODULE_REGISTRY: ModuleConfig[] = [
   { id: "jogControls", title: "Jog Controls", column: "right" },
   { id: "jobControls", title: "Job Controls", column: "right" },
   { id: "fileList", title: "File List", column: "right" },
-  { id: "scheduledPrints", title: "Scheduled Prints", column: "right" },
   { id: "stats", title: "Print Stats", column: "right" },
 ];
 
@@ -129,8 +126,6 @@ export default function Dashboard() {
   const [dragCounter, setDragCounter] = useState(0);
   const [lightOn, setLightOn] = useState(false);
   const [fanOn, setFanOn] = useState(false);
-  
-  const isPageVisible = useVisibility();
 
   interface SmartPlug {
     id: number;
@@ -160,7 +155,7 @@ export default function Dashboard() {
       return res.json();
     },
     enabled: !!enabledPlug,
-    refetchInterval: isPageVisible ? 30000 : false,
+    refetchInterval: 10000,
   });
 
   const plugPowerMutation = useMutation({
@@ -188,7 +183,7 @@ export default function Dashboard() {
 
   const { data: printers = [], isLoading: printersLoading } = useQuery<Printer[]>({
     queryKey: ["/api/printers"],
-    refetchInterval: isPageVisible ? 10000 : false,
+    refetchInterval: 5000,
   });
 
   // Use connected printer if available, otherwise use first printer in list
@@ -251,7 +246,7 @@ export default function Dashboard() {
   const { data: pingResult } = useQuery<{ online: boolean; hasToken: boolean }>({
     queryKey: [`/api/printers/${disconnectedPrinter?.id}/ping`],
     enabled: !!disconnectedPrinter && !activePrinter,
-    refetchInterval: isPageVisible ? 15000 : false,
+    refetchInterval: 10000,
   });
 
   const addPrinterMutation = useMutation({
@@ -510,12 +505,7 @@ export default function Dashboard() {
   const { data: status } = useQuery<PrinterStatusType>({
     queryKey: [`/api/printers/${activePrinter?.id}/status`],
     enabled: !!activePrinter,
-    refetchInterval: (query) => {
-      if (!isPageVisible) return false;
-      const state = query.state.data?.state;
-      const isPrinting = state && (state.toLowerCase().includes('print') || state.toLowerCase().includes('working'));
-      return isPrinting ? 5000 : 30000;
-    },
+    refetchInterval: 3000,
   });
 
   const handleAddPrinter = useCallback((name: string, ip: string) => {
@@ -615,8 +605,6 @@ export default function Dashboard() {
         );
       case "fileList":
         return <FileList key={moduleId} printerId={selectedPrinter.id} />;
-      case "scheduledPrints":
-        return <ScheduledPrintsPanel key={moduleId} printerId={selectedPrinter.id} />;
       case "stats":
         return <PrintStatsPanel key={moduleId} printerId={selectedPrinter.id} />;
       default:
@@ -864,7 +852,6 @@ export default function Dashboard() {
                   {renderModule("jogControls")}
                   {renderModule("jobControls")}
                   {renderModule("fileList")}
-                  {renderModule("scheduledPrints")}
                   {renderModule("stats")}
                 </div>
               )}

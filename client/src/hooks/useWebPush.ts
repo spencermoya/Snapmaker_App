@@ -26,23 +26,17 @@ export type PushStatus =
 export function useWebPush(printerId: number | undefined) {
   const [status, setStatus] = useState<PushStatus>("loading");
   const [error, setError] = useState<string | null>(null);
-  const [debugInfo, setDebugInfo] = useState<string | null>(null);
 
   const checkSupport = useCallback(() => {
-    const missing: string[] = [];
-    
     if (!("serviceWorker" in navigator)) {
-      missing.push("Service Worker");
+      setStatus("unsupported");
+      return false;
     }
     if (!("PushManager" in window)) {
-      missing.push("Push Manager");
+      setStatus("unsupported");
+      return false;
     }
     if (!("Notification" in window)) {
-      missing.push("Notifications");
-    }
-    
-    if (missing.length > 0) {
-      setDebugInfo(`Not supported: ${missing.join(", ")}. Try installing app to home screen.`);
       setStatus("unsupported");
       return false;
     }
@@ -82,45 +76,28 @@ export function useWebPush(printerId: number | undefined) {
 
     try {
       setStatus("loading");
-      console.log("[WebPush] Starting subscription flow...");
 
-      // Step 1: Request permission
-      console.log("[WebPush] Requesting notification permission...");
       const permission = await Notification.requestPermission();
-      console.log("[WebPush] Permission result:", permission);
       if (permission !== "granted") {
         setStatus("permission_denied");
-        setDebugInfo("Permission denied. On iOS: Settings > Notifications > [App Name]");
         return false;
       }
 
-      // Step 2: Get VAPID key
-      console.log("[WebPush] Fetching VAPID public key...");
       const vapidResponse = await fetch("/api/push/vapid-public-key");
       if (!vapidResponse.ok) {
-        const errData = await vapidResponse.json().catch(() => ({}));
-        throw new Error(errData.error || `VAPID key request failed: ${vapidResponse.status}`);
+        throw new Error("Failed to get VAPID key");
       }
       const { publicKey } = await vapidResponse.json();
-      console.log("[WebPush] Got VAPID key:", publicKey?.substring(0, 20) + "...");
 
-      // Step 3: Wait for service worker
-      console.log("[WebPush] Waiting for service worker...");
       const registration = await navigator.serviceWorker.ready;
-      console.log("[WebPush] Service worker ready, scope:", registration.scope);
       
-      // Step 4: Subscribe to push
-      console.log("[WebPush] Subscribing to push manager...");
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey),
       });
-      console.log("[WebPush] Push subscription created");
 
       const subJson = subscription.toJSON();
       
-      // Step 5: Save to server
-      console.log("[WebPush] Saving subscription to server...");
       const saveResponse = await fetch(`/api/printers/${printerId}/push-subscription`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -131,21 +108,16 @@ export function useWebPush(printerId: number | undefined) {
       });
 
       if (!saveResponse.ok) {
-        const errData = await saveResponse.json().catch(() => ({}));
-        throw new Error(errData.error || "Failed to save subscription");
+        throw new Error("Failed to save subscription");
       }
 
-      console.log("[WebPush] Subscription saved successfully!");
       setStatus("subscribed");
       setError(null);
-      setDebugInfo(null);
       return true;
     } catch (err) {
-      console.error("[WebPush] Subscription failed:", err);
+      console.error("Failed to subscribe:", err);
       setStatus("error");
-      const msg = err instanceof Error ? err.message : "Failed to enable notifications";
-      setError(msg);
-      setDebugInfo(`Error: ${msg}. Check console for details.`);
+      setError(err instanceof Error ? err.message : "Failed to enable notifications");
       return false;
     }
   }, [printerId]);
@@ -185,7 +157,6 @@ export function useWebPush(printerId: number | undefined) {
   return {
     status,
     error,
-    debugInfo,
     subscribe,
     unsubscribe,
     isSupported: status !== "unsupported",

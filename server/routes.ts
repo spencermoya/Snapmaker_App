@@ -8,8 +8,7 @@ import { extractThumbnail } from "./thumbnailExtractor";
 import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } from "@shared/schema";
 import { z } from "zod";
 import { addNotificationClient } from "./notifications";
-import { getVapidPublicKey, initializeWebPush, sendPushNotification } from "./webPush";
-import { startScheduler, getSchedulerStatus } from "./scheduler";
+import { getVapidPublicKey, initializeWebPush } from "./webPush";
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -75,42 +74,11 @@ export async function registerRoutes(
     try {
       const publicKey = await getVapidPublicKey();
       if (!publicKey) {
-        console.log("[WebPush] VAPID key not found - WebPush may not be initialized");
         return res.status(503).json({ error: "Web Push not configured" });
       }
       res.json({ publicKey });
     } catch (error) {
-      console.error("[WebPush] Failed to get VAPID key:", error);
       res.status(500).json({ error: "Failed to get VAPID key" });
-    }
-  });
-
-  app.get("/api/push/debug", async (req, res) => {
-    try {
-      const publicKey = await getVapidPublicKey();
-      const allPrinters = await storage.getAllPrinters();
-      const subscriptionCounts: Record<number, number> = {};
-      
-      for (const printer of allPrinters) {
-        const subs = await storage.getPushSubscriptions(printer.id);
-        subscriptionCounts[printer.id] = subs.length;
-      }
-      
-      res.json({
-        vapidConfigured: !!publicKey,
-        vapidPublicKeyPrefix: publicKey ? publicKey.substring(0, 20) + "..." : null,
-        subscriptionsByPrinter: subscriptionCounts,
-        serverTime: new Date().toISOString(),
-        recommendations: [
-          "Ensure app is installed to home screen (iOS 16.4+ required)",
-          "HTTPS with trusted certificate required (add self-signed cert to device trust)",
-          "Check Settings > Notifications > [App Name] is enabled",
-          "Server clock must be synced (affects VAPID signature)"
-        ]
-      });
-    } catch (error) {
-      console.error("[WebPush] Debug endpoint error:", error);
-      res.status(500).json({ error: "Failed to get debug info" });
     }
   });
 
@@ -150,33 +118,6 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete subscription" });
-    }
-  });
-
-  app.post("/api/printers/:id/test-notification", async (req, res) => {
-    const printerId = parseInt(req.params.id);
-    if (isNaN(printerId)) {
-      return res.status(400).json({ error: "Invalid printer ID" });
-    }
-
-    try {
-      const subscriptions = await storage.getPushSubscriptions(printerId);
-      if (subscriptions.length === 0) {
-        return res.status(400).json({ error: "No push subscriptions found. Please enable notifications first." });
-      }
-
-      await sendPushNotification(printerId, {
-        type: "print_completed",
-        printerId,
-        filename: "Test Notification",
-        timestamp: new Date().toISOString(),
-        durationMinutes: 1,
-      });
-
-      res.json({ success: true, message: `Test notification sent to ${subscriptions.length} subscriber(s)` });
-    } catch (error) {
-      console.error("Failed to send test notification:", error);
-      res.status(500).json({ error: "Failed to send test notification" });
     }
   });
 
@@ -1522,65 +1463,6 @@ export async function registerRoutes(
     }
   });
 
-  // Scheduled Prints API
-  app.get("/api/scheduled-prints", async (req, res) => {
-    try {
-      const printerId = req.query.printerId ? parseInt(req.query.printerId as string) : undefined;
-      const scheduledPrints = await storage.getScheduledPrints(printerId);
-      res.json(scheduledPrints);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get scheduled prints" });
-    }
-  });
-
-  app.post("/api/scheduled-prints", async (req, res) => {
-    try {
-      const { printerId, fileId, scheduledTime, smartPlugId, homekitDeviceId, printerWarmupMinutes } = req.body;
-      
-      if (!printerId || !fileId || !scheduledTime) {
-        return res.status(400).json({ error: "printerId, fileId, and scheduledTime are required" });
-      }
-
-      const scheduledPrint = await storage.createScheduledPrint({
-        printerId,
-        fileId,
-        scheduledTime: new Date(scheduledTime),
-        smartPlugId: smartPlugId || null,
-        homekitDeviceId: homekitDeviceId || null,
-        printerWarmupMinutes: printerWarmupMinutes || 2,
-      });
-
-      res.json(scheduledPrint);
-    } catch (error) {
-      console.error("Failed to create scheduled print:", error);
-      res.status(500).json({ error: "Failed to schedule print" });
-    }
-  });
-
-  app.delete("/api/scheduled-prints/:id", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const deleted = await storage.deleteScheduledPrint(id);
-      
-      if (!deleted) {
-        return res.status(404).json({ error: "Scheduled print not found" });
-      }
-
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete scheduled print" });
-    }
-  });
-
-  app.get("/api/scheduler/status", async (req, res) => {
-    try {
-      const status = await getSchedulerStatus();
-      res.json(status);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get scheduler status" });
-    }
-  });
-
   // Initialize file watcher and Luban proxy on startup
   initializeWatcher().catch((err) => {
     console.error("Failed to initialize file watcher:", err);
@@ -1589,9 +1471,6 @@ export async function registerRoutes(
   initializeLubanProxy().catch((err) => {
     console.error("Failed to initialize Luban proxy:", err);
   });
-
-  // Start scheduler
-  startScheduler();
 
   return httpServer;
 }
