@@ -380,13 +380,13 @@ export default function AIChatPanel() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     placeholder="Ask anything..."
-                    disabled={isStreaming || !aiStatus?.connected}
+                    disabled={isStreaming}
                     data-testid="input-ai-message"
                   />
                   <Button
                     type="submit"
                     size="icon"
-                    disabled={isStreaming || !input.trim() || !aiStatus?.connected}
+                    disabled={isStreaming || !input.trim()}
                     data-testid="button-send-message"
                   >
                     {isStreaming ? (
