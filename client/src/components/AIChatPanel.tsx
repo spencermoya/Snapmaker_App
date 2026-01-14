@@ -140,7 +140,7 @@ export default function AIChatPanel() {
   });
 
   const sendMessage = async () => {
-    if (!input.trim() || !activeConversation || isStreaming) return;
+    if (!input.trim() || isStreaming) return;
 
     const userMessage = input;
     setInput("");
@@ -148,7 +148,24 @@ export default function AIChatPanel() {
     setStreamingMessage("");
 
     try {
-      const response = await fetch(`/api/ai/conversations/${activeConversation}/messages`, {
+      let conversationId = activeConversation;
+      
+      if (!conversationId) {
+        const createRes = await fetch("/api/ai/conversations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "New Chat" }),
+        });
+        if (!createRes.ok) {
+          throw new Error("Failed to create conversation");
+        }
+        const newConversation = await createRes.json();
+        conversationId = newConversation.id;
+        setActiveConversation(conversationId);
+        queryClient.invalidateQueries({ queryKey: ["/api/ai/conversations"] });
+      }
+
+      const response = await fetch(`/api/ai/conversations/${conversationId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: userMessage }),
@@ -183,9 +200,9 @@ export default function AIChatPanel() {
         }
       }
 
-      queryClient.invalidateQueries({ queryKey: ["/api/ai/conversations", activeConversation] });
-    } catch (error) {
-      toast.error("Failed to send message");
+      queryClient.invalidateQueries({ queryKey: ["/api/ai/conversations", conversationId] });
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to send message");
     } finally {
       setIsStreaming(false);
       setStreamingMessage("");
