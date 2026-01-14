@@ -405,6 +405,10 @@ export default function AIChatPanel() {
                     size="icon"
                     disabled={isStreaming || !input.trim()}
                     data-testid="button-send-message"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      sendMessage();
+                    }}
                   >
                     {isStreaming ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
