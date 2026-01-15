@@ -1,7 +1,7 @@
 import { Link } from "wouter";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { AIAssistant } from "@/components/AIAssistant";
+import AIChatPanel from "@/components/AIChatPanel";
 
 export default function AI() {
   return (
@@ -14,13 +14,13 @@ export default function AI() {
                 <ArrowLeft className="w-5 h-5" />
               </Button>
             </Link>
-            <h1 className="text-xl font-bold">AI Developer Assistant</h1>
+            <h1 className="text-xl font-bold">AI Assistant</h1>
           </div>
         </div>
       </header>
 
       <main className="flex-1 p-4 overflow-hidden">
-        <AIAssistant />
+        <AIChatPanel inline />
       </main>
     </div>
   );

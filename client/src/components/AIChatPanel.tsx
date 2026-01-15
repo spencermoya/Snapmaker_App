@@ -28,7 +28,11 @@ interface GitStatus {
   hasChanges: boolean;
 }
 
-export default function AIChatPanel() {
+interface AIChatPanelProps {
+  inline?: boolean;
+}
+
+export default function AIChatPanel({ inline = false }: AIChatPanelProps) {
   const [open, setOpen] = useState(false);
   const [inputText, setInputText] = useState("");
   const [currentConversationId, setCurrentConversationId] = useState<number | null>(null);
@@ -74,12 +78,12 @@ export default function AIChatPanel() {
     }
   }, [displayMessages, streamingText]);
 
-  // Select first conversation when panel opens
+  // Select first conversation when panel opens (or immediately in inline mode)
   useEffect(() => {
-    if (open && conversationsList.length > 0 && !currentConversationId) {
+    if ((open || inline) && conversationsList.length > 0 && !currentConversationId) {
       setCurrentConversationId(conversationsList[0].id);
     }
-  }, [open, conversationsList, currentConversationId]);
+  }, [open, inline, conversationsList, currentConversationId]);
 
   async function loadMessages(convId: number) {
     try {
@@ -329,32 +333,20 @@ export default function AIChatPanel() {
     return parts.length > 0 ? parts : <span className="whitespace-pre-wrap">{content}</span>;
   }
 
-  return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <Button
-          size="icon"
-          className="fixed bottom-4 right-4 h-14 w-14 rounded-full shadow-lg z-50"
-          data-testid="button-open-ai-chat"
-        >
-          <Bot className="h-6 w-6" />
-        </Button>
-      </SheetTrigger>
+  // The main chat content - shared between inline and sheet modes
+  const chatContent = (
+    <>
+      <div className="p-4 border-b flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Bot className="h-5 w-5" />
+          <span className="font-semibold">AI Assistant</span>
+        </div>
+        <Badge variant={aiStatus?.connected ? "default" : "secondary"}>
+          {aiStatus?.connected ? "Online" : "Offline"}
+        </Badge>
+      </div>
 
-      <SheetContent side="right" className="w-full sm:w-[440px] p-0 flex flex-col">
-        <SheetHeader className="p-4 border-b">
-          <div className="flex items-center justify-between">
-            <SheetTitle className="flex items-center gap-2">
-              <Bot className="h-5 w-5" />
-              AI Assistant
-            </SheetTitle>
-            <Badge variant={aiStatus?.connected ? "default" : "secondary"}>
-              {aiStatus?.connected ? "Online" : "Offline"}
-            </Badge>
-          </div>
-        </SheetHeader>
-
-        <Tabs defaultValue="chat" className="flex-1 flex flex-col overflow-hidden">
+      <Tabs defaultValue="chat" className="flex-1 flex flex-col overflow-hidden">
           <TabsList className="mx-4 mt-2">
             <TabsTrigger value="chat">Chat</TabsTrigger>
             <TabsTrigger value="git">Git</TabsTrigger>
@@ -592,6 +584,33 @@ export default function AIChatPanel() {
             </div>
           </TabsContent>
         </Tabs>
+    </>
+  );
+
+  // Inline mode - render directly without Sheet wrapper
+  if (inline) {
+    return (
+      <div className="flex flex-col h-full bg-background rounded-lg border overflow-hidden">
+        {chatContent}
+      </div>
+    );
+  }
+
+  // Floating mode - render as Sheet with floating trigger button
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <Button
+          size="icon"
+          className="fixed bottom-4 right-4 h-14 w-14 rounded-full shadow-lg z-50"
+          data-testid="button-open-ai-chat"
+        >
+          <Bot className="h-6 w-6" />
+        </Button>
+      </SheetTrigger>
+
+      <SheetContent side="right" className="w-full sm:w-[440px] p-0 flex flex-col">
+        {chatContent}
       </SheetContent>
     </Sheet>
   );
