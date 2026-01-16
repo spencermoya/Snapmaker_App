@@ -66,8 +66,12 @@ echo "Using $HOST_TYPE: $HOST_ARG"
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout "$KEY_FILE" \
     -out "$CERT_FILE" \
+    -sha256 \
     -subj "/C=US/ST=Local/L=Local/O=Snapmaker/CN=$HOST_ARG" \
-    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,$SAN_ENTRY"
+    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,$SAN_ENTRY" \
+    -addext "basicConstraints=critical,CA:FALSE" \
+    -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
+    -addext "extendedKeyUsage=serverAuth"
 
 if [ $? -eq 0 ]; then
     echo "$HOST_ARG" > "$HOST_FILE"
