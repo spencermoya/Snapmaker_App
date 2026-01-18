@@ -124,6 +124,15 @@ bash script/generate-certs.sh 192.168.1.100
 
 Note: With self-signed certificates, browsers will show a security warning on first visit. Click "Advanced" → "Proceed" to trust it.
 
+#### iOS/iPhone Certificate Installation
+When HTTPS is enabled, the app runs a separate HTTP server on port 5001 specifically for certificate download (since iOS won't connect to HTTPS without trusting the cert first).
+
+1. On your iPhone, open Safari and go to: `http://YOUR_PI_IP:5001`
+2. Tap "Download Certificate"
+3. Go to Settings → "Profile Downloaded" → Install
+4. Go to Settings → General → About → Certificate Trust Settings → Toggle ON
+5. Now access the main app at: `https://YOUR_PI_IP:5000`
+
 If your Pi's IP address changes, regenerate certificates:
 ```bash
 rm -rf certs/
