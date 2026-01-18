@@ -145,6 +145,35 @@ function getOrCreateState(printerId: number): PrinterState {
   return state;
 }
 
+function extractFilamentFromGcode(gcode: string): number | null {
+  const lines = gcode.split('\n').slice(0, 100);
+  
+  for (const line of lines) {
+    let match = line.match(/;filament\s+used\s*[:\[=]\s*([\d.]+)\s*g/i);
+    if (match) {
+      return parseFloat(match[1]);
+    }
+    
+    match = line.match(/;Filament\s+weight\s*=\s*([\d.]+)\s*g/i);
+    if (match) {
+      return parseFloat(match[1]);
+    }
+    
+    match = line.match(/;estimated_filament_weight_g\s*=\s*([\d.]+)/i);
+    if (match) {
+      return parseFloat(match[1]);
+    }
+    
+    match = line.match(/;Filament\s+used\s*:\s*([\d.]+)\s*mm/i);
+    if (match) {
+      const mm = parseFloat(match[1]);
+      return mm * 0.00246;
+    }
+  }
+  
+  return null;
+}
+
 async function handlePrintStateChange(
   printerId: number,
   oldState: string,
@@ -168,14 +197,34 @@ async function handlePrintStateChange(
       await storage.incrementPrintCount(printerId);
       await storage.addPrintTime(printerId, printDuration);
       
+      let filamentUsed = 0;
       if (state.currentFilename) {
+        try {
+          const files = await storage.getUploadedFiles(printerId);
+          const matchingFile = files.find(f => 
+            f.filename === state.currentFilename || 
+            f.displayName === state.currentFilename
+          );
+          
+          if (matchingFile?.fileContent) {
+            const extracted = extractFilamentFromGcode(matchingFile.fileContent);
+            if (extracted !== null && extracted > 0) {
+              filamentUsed = extracted;
+              await storage.addFilamentUsed(printerId, filamentUsed);
+              console.log(`[BackgroundService] Filament used: ${filamentUsed.toFixed(2)}g`);
+            }
+          }
+        } catch (error) {
+          console.log(`[BackgroundService] Could not extract filament usage:`, error);
+        }
+        
         await storage.updatePrinterStats(printerId, {
           lastPrintFilename: state.currentFilename,
           lastPrintCompletedAt: new Date(),
         });
       }
       
-      console.log(`[BackgroundService] Stats updated: +1 print, +${printDuration}s print time`);
+      console.log(`[BackgroundService] Stats updated: +1 print, +${printDuration}s print time, +${filamentUsed.toFixed(2)}g filament`);
     }
     
     state.printStartTime = null;

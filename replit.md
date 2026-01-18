@@ -67,6 +67,8 @@ shared/           # Shared code between frontend/backend
   - Tracks print state transitions (idle → running → completed) for statistics
 - **Auto-connect feature**: Per-printer setting (autoConnect field) controls whether automatic reconnection attempts are made
 - **Statistics tracking**: Tracks total print time, print count, and filament usage across all prints. Stats update automatically when prints complete.
+  - Print time and count: Tracked for all prints (detected via background service monitoring)
+  - Filament usage: Tracked only for prints using files uploaded through this app (parsed from G-code headers)
 - **File tracking workaround**: Snapmaker API doesn't support file listing. Users manually add filenames to track files uploaded via Luban. Files are stored in the `uploadedFiles` database table.
 - **Multiple file upload methods**:
   - Manual upload via file picker in FileList component
