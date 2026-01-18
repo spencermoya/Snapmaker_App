@@ -116,27 +116,6 @@ sudo -u postgres psql -c "CREATE DATABASE snapmaker OWNER snapmaker;"
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE snapmaker TO snapmaker;"
 ```
 
-### HTTPS Setup (Required for Safari/iOS)
-```bash
-# Generate self-signed SSL certificates (auto-detects Pi's IP)
-npm run generate-certs
-
-# Or specify a custom IP address:
-bash script/generate-certs.sh 192.168.1.100
-
-# This creates:
-#   certs/server.key
-#   certs/server.crt
-```
-
-Note: With self-signed certificates, browsers will show a security warning on first visit. Click "Advanced" → "Proceed" to trust it.
-
-If your Pi's IP address changes, regenerate certificates:
-```bash
-rm -rf certs/
-npm run generate-certs
-```
-
 ### Running the Application
 ```bash
 # Set environment variables
@@ -153,8 +132,7 @@ hostname -I
 ```
 
 Then access the dashboard at:
-- HTTPS: https://YOUR_PI_IP:5000 (if certs generated)
-- HTTP: http://YOUR_PI_IP:5000 (if no certs)
+- http://YOUR_PI_IP:5000
 
 ### Updating to Latest Version
 ```bash
