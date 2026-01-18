@@ -1,4 +1,4 @@
-import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, printers, printJobs, dashboardPreferences, uploadedFiles, appSettings, DEFAULT_ENABLED_MODULES } from "@shared/schema";
+import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, type SmartPlug, type InsertSmartPlug, printers, printJobs, dashboardPreferences, uploadedFiles, appSettings, smartPlugs, DEFAULT_ENABLED_MODULES } from "@shared/schema";
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 
@@ -17,6 +17,12 @@ export interface IStorage {
   deleteUploadedFile(id: number, printerId: number): Promise<boolean>;
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string | null): Promise<void>;
+  getAllSmartPlugs(): Promise<SmartPlug[]>;
+  getSmartPlug(id: number): Promise<SmartPlug | undefined>;
+  getSmartPlugByNodeId(nodeId: string): Promise<SmartPlug | undefined>;
+  createSmartPlug(plug: InsertSmartPlug): Promise<SmartPlug>;
+  updateSmartPlug(id: number, data: Partial<SmartPlug>): Promise<SmartPlug | undefined>;
+  deleteSmartPlug(id: number): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -135,6 +141,34 @@ export class DbStorage implements IStorage {
     } else {
       await db.insert(appSettings).values({ key, value });
     }
+  }
+
+  async getAllSmartPlugs(): Promise<SmartPlug[]> {
+    return await db.select().from(smartPlugs);
+  }
+
+  async getSmartPlug(id: number): Promise<SmartPlug | undefined> {
+    const result = await db.select().from(smartPlugs).where(eq(smartPlugs.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getSmartPlugByNodeId(nodeId: string): Promise<SmartPlug | undefined> {
+    const result = await db.select().from(smartPlugs).where(eq(smartPlugs.nodeId, nodeId)).limit(1);
+    return result[0];
+  }
+
+  async createSmartPlug(plug: InsertSmartPlug): Promise<SmartPlug> {
+    const result = await db.insert(smartPlugs).values(plug).returning();
+    return result[0]!;
+  }
+
+  async updateSmartPlug(id: number, data: Partial<SmartPlug>): Promise<SmartPlug | undefined> {
+    const result = await db.update(smartPlugs).set(data).where(eq(smartPlugs.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteSmartPlug(id: number): Promise<void> {
+    await db.delete(smartPlugs).where(eq(smartPlugs.id, id));
   }
 }
 

@@ -44,6 +44,27 @@ export const appSettings = pgTable("app_settings", {
   value: text("value"),
 });
 
+export const smartPlugs = pgTable("smart_plugs", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  nodeId: text("node_id").notNull().unique(),
+  vendorId: text("vendor_id"),
+  productId: text("product_id"),
+  deviceType: text("device_type"),
+  ipAddress: text("ip_address"),
+  pairingCode: text("pairing_code"),
+  isPaired: boolean("is_paired").default(false),
+  isOn: boolean("is_on").default(false),
+  lastSeen: timestamp("last_seen"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertSmartPlugSchema = createInsertSchema(smartPlugs).omit({
+  id: true,
+  createdAt: true,
+  lastSeen: true,
+});
+
 export const insertPrinterSchema = createInsertSchema(printers).omit({
   id: true,
   lastSeen: true,
@@ -82,6 +103,8 @@ export type DashboardPreferences = typeof dashboardPreferences.$inferSelect;
 export type UploadedFile = typeof uploadedFiles.$inferSelect;
 export type InsertUploadedFile = z.infer<typeof insertUploadedFileSchema>;
 export type AppSetting = typeof appSettings.$inferSelect;
+export type SmartPlug = typeof smartPlugs.$inferSelect;
+export type InsertSmartPlug = z.infer<typeof insertSmartPlugSchema>;
 
 export type PrinterStatus = {
   state: string;
