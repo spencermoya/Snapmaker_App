@@ -1165,12 +1165,19 @@ export async function registerRoutes(
     try {
       const printerId = parseInt(req.params.id);
       const stats = await storage.getPrinterStats(printerId);
-      res.json(stats || {
-        totalPrintTime: 0,
-        totalPrintCount: 0,
-        filamentUsed: 0,
-        lastPrintFilename: null,
-        lastPrintCompletedAt: null,
+      
+      const { getBackgroundServiceStatus } = await import("./backgroundService");
+      const bgStatus = getBackgroundServiceStatus();
+      const printerState = bgStatus.printerStates.find(s => s.printerId === printerId);
+      
+      res.json({
+        totalPrintTime: stats?.totalPrintTime || 0,
+        totalPrintCount: stats?.totalPrintCount || 0,
+        filamentUsed: stats?.filamentUsed || 0,
+        lastPrintFilename: stats?.lastPrintFilename || null,
+        lastPrintCompletedAt: stats?.lastPrintCompletedAt || null,
+        currentPrintStartTime: printerState?.printStartTime || null,
+        isPrinting: printerState?.lastPrintState === "running",
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to get printer stats" });

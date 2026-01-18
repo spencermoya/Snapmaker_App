@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
-import { Clock, Layers, Printer } from "lucide-react";
+import { Clock, Layers, Printer, Activity } from "lucide-react";
 
 interface PrinterStatsData {
   totalPrintTime: number;
@@ -8,10 +9,14 @@ interface PrinterStatsData {
   filamentUsed: number;
   lastPrintFilename: string | null;
   lastPrintCompletedAt: string | null;
+  currentPrintStartTime: number | null;
+  isPrinting: boolean;
 }
 
 interface PrinterStatsProps {
   printerId: number;
+  isConnected?: boolean;
+  isPrinting?: boolean;
 }
 
 function formatDuration(seconds: number): string {
@@ -22,6 +27,17 @@ function formatDuration(seconds: number): string {
     return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
   }
   return `${minutes}m`;
+}
+
+function formatLiveDuration(seconds: number): string {
+  if (!seconds || seconds === 0) return "0:00";
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  }
+  return `${minutes}:${secs.toString().padStart(2, "0")}`;
 }
 
 function formatFilament(grams: number): string {
@@ -50,11 +66,32 @@ function formatDate(dateStr: string | null): string {
   }
 }
 
-export default function PrinterStats({ printerId }: PrinterStatsProps) {
+export default function PrinterStats({ printerId, isConnected = false, isPrinting = false }: PrinterStatsProps) {
+  const [elapsedTime, setElapsedTime] = useState(0);
+  
   const { data: stats, isLoading } = useQuery<PrinterStatsData>({
     queryKey: [`/api/printers/${printerId}/stats`],
-    refetchInterval: 30000,
+    refetchInterval: isPrinting ? 5000 : 30000,
   });
+
+  useEffect(() => {
+    if (!isPrinting || !stats?.currentPrintStartTime) {
+      setElapsedTime(0);
+      return;
+    }
+
+    const startTime = stats.currentPrintStartTime;
+    
+    const updateElapsed = () => {
+      const now = Date.now();
+      setElapsedTime(Math.floor((now - startTime) / 1000));
+    };
+    
+    updateElapsed();
+    const interval = setInterval(updateElapsed, 1000);
+    
+    return () => clearInterval(interval);
+  }, [isPrinting, stats?.currentPrintStartTime]);
 
   if (isLoading) {
     return (
@@ -76,9 +113,17 @@ export default function PrinterStats({ printerId }: PrinterStatsProps) {
 
   return (
     <Card className="p-4 bg-secondary/20 border-border" data-testid="card-printer-stats">
-      <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">
-        Lifetime Statistics
-      </h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+          Lifetime Statistics
+        </h3>
+        {isPrinting && (
+          <div className="flex items-center gap-1 text-xs text-green-500">
+            <Activity className="h-3 w-3 animate-pulse" />
+            <span>Live</span>
+          </div>
+        )}
+      </div>
       
       <div className="grid grid-cols-3 gap-4">
         <div className="text-center">
@@ -112,7 +157,18 @@ export default function PrinterStats({ printerId }: PrinterStatsProps) {
         </div>
       </div>
 
-      {stats?.lastPrintFilename && (
+      {isPrinting && elapsedTime > 0 && (
+        <div className="mt-4 pt-3 border-t border-border">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">Current print:</span>
+            <span className="text-sm font-mono font-bold text-green-500" data-testid="stat-current-elapsed">
+              {formatLiveDuration(elapsedTime)}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {!isPrinting && stats?.lastPrintFilename && (
         <div className="mt-4 pt-3 border-t border-border">
           <div className="text-xs text-muted-foreground">
             Last print: <span className="text-foreground">{stats.lastPrintFilename}</span>

@@ -325,7 +325,7 @@ export function stopBackgroundService(): void {
 
 export function getBackgroundServiceStatus(): {
   running: boolean;
-  printerStates: { printerId: number; wasOnline: boolean; lastPrintState: string }[];
+  printerStates: { printerId: number; wasOnline: boolean; lastPrintState: string; printStartTime: number | null }[];
 } {
   return {
     running: isRunning,
@@ -333,6 +333,7 @@ export function getBackgroundServiceStatus(): {
       printerId: s.printerId,
       wasOnline: s.wasOnline,
       lastPrintState: s.lastPrintState,
+      printStartTime: s.printStartTime,
     })),
   };
 }

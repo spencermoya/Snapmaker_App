@@ -514,7 +514,7 @@ export default function Dashboard() {
           />
         );
       case "stats":
-        return <PrinterStats key={moduleId} printerId={selectedPrinter.id} />;
+        return <PrinterStats key={moduleId} printerId={selectedPrinter.id} isConnected={isConnected} isPrinting={mapStatus(status?.state) === "printing"} />;
       case "jogControls":
         return <JogControls key={moduleId} printerId={selectedPrinter.id} disabled={!isConnected} />;
       case "jobControls":
