@@ -17,6 +17,9 @@ interface PrinterStatsProps {
   printerId: number;
   isConnected?: boolean;
   isPrinting?: boolean;
+  progress?: number;
+  currentFile?: string | null;
+  timeRemaining?: number | null;
 }
 
 function formatDuration(seconds: number): string {
@@ -66,7 +69,7 @@ function formatDate(dateStr: string | null): string {
   }
 }
 
-export default function PrinterStats({ printerId, isConnected = false, isPrinting = false }: PrinterStatsProps) {
+export default function PrinterStats({ printerId, isConnected = false, isPrinting = false, progress = 0, currentFile = null, timeRemaining = null }: PrinterStatsProps) {
   const [elapsedTime, setElapsedTime] = useState(0);
   
   const { data: stats, isLoading } = useQuery<PrinterStatsData>({
@@ -157,13 +160,40 @@ export default function PrinterStats({ printerId, isConnected = false, isPrintin
         </div>
       </div>
 
-      {isPrinting && elapsedTime > 0 && (
-        <div className="mt-4 pt-3 border-t border-border">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">Current print:</span>
-            <span className="text-sm font-mono font-bold text-green-500" data-testid="stat-current-elapsed">
-              {formatLiveDuration(elapsedTime)}
+      {isPrinting && (
+        <div className="mt-4 pt-3 border-t border-border space-y-2">
+          {currentFile && (
+            <div className="text-xs text-muted-foreground truncate">
+              Printing: <span className="text-foreground">{currentFile}</span>
+            </div>
+          )}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 bg-secondary/40 rounded-full h-2 overflow-hidden">
+              <div 
+                className="h-full bg-green-500 transition-all duration-500"
+                style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+                data-testid="progress-bar"
+              />
+            </div>
+            <span className="text-sm font-mono font-bold text-green-500 min-w-[3rem] text-right" data-testid="stat-progress">
+              {progress.toFixed(1)}%
             </span>
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">Elapsed:</span>
+              <span className="font-mono text-foreground" data-testid="stat-current-elapsed">
+                {formatLiveDuration(elapsedTime)}
+              </span>
+            </div>
+            {timeRemaining && timeRemaining > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground">Remaining:</span>
+                <span className="font-mono text-foreground" data-testid="stat-time-remaining">
+                  {formatDuration(timeRemaining)}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}
