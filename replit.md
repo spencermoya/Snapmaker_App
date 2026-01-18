@@ -61,7 +61,12 @@ shared/           # Shared code between frontend/backend
 - Direct HTTP communication with Snapmaker printers on port 8080
 - Endpoints for status polling, connection management, and control commands
 - Token-based authentication for printer connections
-- Auto-reconnect feature: When disconnected, monitors if printer comes online and attempts automatic reconnection using saved token
+- **Background connection service**: Server-side service (`server/backgroundService.ts`) maintains persistent printer monitoring
+  - Polls printer status every 5 seconds when connected, 15 seconds when disconnected
+  - Automatically detects when printer comes online and attempts reconnection using saved token
+  - Tracks print state transitions (idle → running → completed) for statistics
+- **Auto-connect feature**: Per-printer setting (autoConnect field) controls whether automatic reconnection attempts are made
+- **Statistics tracking**: Tracks total print time, print count, and filament usage across all prints. Stats update automatically when prints complete.
 - **File tracking workaround**: Snapmaker API doesn't support file listing. Users manually add filenames to track files uploaded via Luban. Files are stored in the `uploadedFiles` database table.
 - **Multiple file upload methods**:
   - Manual upload via file picker in FileList component
@@ -70,7 +75,7 @@ shared/           # Shared code between frontend/backend
   - Watch folder: Configure a local folder path in Settings; new G-code files are auto-imported (uses `server/fileWatcher.ts`)
   - Luban auto-capture: Proxy server intercepts Luban uploads, captures files automatically, and forwards to printer (uses `server/lubanProxy.ts`)
 - **Luban token capture**: When Luban connects through the proxy, the app captures and saves Luban's authentication token. This token is then used for prompt-free connections - no touchscreen confirmation needed after the first Luban connection.
-- Customizable dashboard: Users can toggle modules (status, webcam, temperature, jog controls, job controls, file list) on/off via the customize panel
+- Customizable dashboard: Users can toggle modules (status, webcam, temperature, stats, jog controls, job controls, file list) on/off via the customize panel
 
 ### UI Libraries
 - **Radix UI**: Headless component primitives for accessibility

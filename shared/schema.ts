@@ -102,6 +102,7 @@ export const DEFAULT_ENABLED_MODULES = [
   "status",
   "webcam", 
   "temperature",
+  "stats",
   "jogControls",
   "jobControls",
   "fileList",

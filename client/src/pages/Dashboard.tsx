@@ -6,6 +6,7 @@ import TemperatureChart from "@/components/TemperatureChart";
 import JogControls from "@/components/JogControls";
 import FileList from "@/components/FileList";
 import WebcamFeed from "@/components/WebcamFeed";
+import PrinterStats from "@/components/PrinterStats";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -28,6 +29,7 @@ const MODULE_REGISTRY: ModuleConfig[] = [
   { id: "status", title: "Printer Status", column: "left" },
   { id: "webcam", title: "Camera Feed", column: "left" },
   { id: "temperature", title: "Temperature Chart", column: "left" },
+  { id: "stats", title: "Lifetime Statistics", column: "left" },
   { id: "jogControls", title: "Jog Controls", column: "right" },
   { id: "jobControls", title: "Job Controls", column: "right" },
   { id: "fileList", title: "File List", column: "right" },
@@ -511,6 +513,8 @@ export default function Dashboard() {
             targetBed={status?.temperature?.targetBed || 0}
           />
         );
+      case "stats":
+        return <PrinterStats key={moduleId} printerId={selectedPrinter.id} />;
       case "jogControls":
         return <JogControls key={moduleId} printerId={selectedPrinter.id} disabled={!isConnected} />;
       case "jobControls":
