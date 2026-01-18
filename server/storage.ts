@@ -1,4 +1,4 @@
-import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, type SmartPlug, type InsertSmartPlug, printers, printJobs, dashboardPreferences, uploadedFiles, appSettings, smartPlugs, DEFAULT_ENABLED_MODULES } from "@shared/schema";
+import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, type SmartPlug, type InsertSmartPlug, type PrinterStats, printers, printJobs, dashboardPreferences, uploadedFiles, appSettings, smartPlugs, printerStats, DEFAULT_ENABLED_MODULES } from "@shared/schema";
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 
@@ -23,6 +23,11 @@ export interface IStorage {
   createSmartPlug(plug: InsertSmartPlug): Promise<SmartPlug>;
   updateSmartPlug(id: number, data: Partial<SmartPlug>): Promise<SmartPlug | undefined>;
   deleteSmartPlug(id: number): Promise<void>;
+  getPrinterStats(printerId: number): Promise<PrinterStats | undefined>;
+  updatePrinterStats(printerId: number, data: Partial<PrinterStats>): Promise<PrinterStats>;
+  incrementPrintCount(printerId: number): Promise<void>;
+  addPrintTime(printerId: number, seconds: number): Promise<void>;
+  addFilamentUsed(printerId: number, grams: number): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -169,6 +174,64 @@ export class DbStorage implements IStorage {
 
   async deleteSmartPlug(id: number): Promise<void> {
     await db.delete(smartPlugs).where(eq(smartPlugs.id, id));
+  }
+
+  async getPrinterStats(printerId: number): Promise<PrinterStats | undefined> {
+    const result = await db.select().from(printerStats).where(eq(printerStats.printerId, printerId)).limit(1);
+    if (!result[0]) {
+      const newStats = await db.insert(printerStats).values({ printerId }).returning();
+      return newStats[0];
+    }
+    return result[0];
+  }
+
+  async updatePrinterStats(printerId: number, data: Partial<PrinterStats>): Promise<PrinterStats> {
+    const existing = await this.getPrinterStats(printerId);
+    if (existing) {
+      const result = await db.update(printerStats)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(printerStats.printerId, printerId))
+        .returning();
+      return result[0]!;
+    }
+    const result = await db.insert(printerStats).values({ printerId, ...data }).returning();
+    return result[0]!;
+  }
+
+  async incrementPrintCount(printerId: number): Promise<void> {
+    const stats = await this.getPrinterStats(printerId);
+    if (stats) {
+      await db.update(printerStats)
+        .set({ 
+          totalPrintCount: (stats.totalPrintCount ?? 0) + 1,
+          updatedAt: new Date()
+        })
+        .where(eq(printerStats.printerId, printerId));
+    }
+  }
+
+  async addPrintTime(printerId: number, seconds: number): Promise<void> {
+    const stats = await this.getPrinterStats(printerId);
+    if (stats) {
+      await db.update(printerStats)
+        .set({ 
+          totalPrintTime: (stats.totalPrintTime ?? 0) + seconds,
+          updatedAt: new Date()
+        })
+        .where(eq(printerStats.printerId, printerId));
+    }
+  }
+
+  async addFilamentUsed(printerId: number, grams: number): Promise<void> {
+    const stats = await this.getPrinterStats(printerId);
+    if (stats) {
+      await db.update(printerStats)
+        .set({ 
+          filamentUsed: (stats.filamentUsed ?? 0) + grams,
+          updatedAt: new Date()
+        })
+        .where(eq(printerStats.printerId, printerId));
+    }
   }
 }
 

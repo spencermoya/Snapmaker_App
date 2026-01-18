@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, boolean, jsonb, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -8,7 +8,19 @@ export const printers = pgTable("printers", {
   ipAddress: text("ip_address").notNull(),
   token: text("token"),
   isConnected: boolean("is_connected").default(false),
+  autoConnect: boolean("auto_connect").default(true),
   lastSeen: timestamp("last_seen"),
+});
+
+export const printerStats = pgTable("printer_stats", {
+  id: serial("id").primaryKey(),
+  printerId: integer("printer_id").references(() => printers.id).unique().notNull(),
+  totalPrintTime: integer("total_print_time").default(0),
+  totalPrintCount: integer("total_print_count").default(0),
+  filamentUsed: real("filament_used").default(0),
+  lastPrintFilename: text("last_print_filename"),
+  lastPrintCompletedAt: timestamp("last_print_completed_at"),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const printJobs = pgTable("print_jobs", {
@@ -105,6 +117,7 @@ export type InsertUploadedFile = z.infer<typeof insertUploadedFileSchema>;
 export type AppSetting = typeof appSettings.$inferSelect;
 export type SmartPlug = typeof smartPlugs.$inferSelect;
 export type InsertSmartPlug = z.infer<typeof insertSmartPlugSchema>;
+export type PrinterStats = typeof printerStats.$inferSelect;
 
 export type PrinterStatus = {
   state: string;
