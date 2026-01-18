@@ -8,14 +8,12 @@ import { toast } from "sonner";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/Dashboard";
 import Settings from "@/pages/Settings";
-import AI from "@/pages/AI";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Dashboard}/>
       <Route path="/settings" component={Settings}/>
-      <Route path="/ai" component={AI}/>
       <Route component={NotFound} />
     </Switch>
   );
