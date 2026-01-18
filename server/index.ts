@@ -2,10 +2,26 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { createServer as createHttpsServer } from "https";
+import { readFileSync, existsSync } from "fs";
 import { ensureSchema } from "./ensureSchema";
 
 const app = express();
-const httpServer = createServer(app);
+
+const certsExist = existsSync("certs/server.key") && existsSync("certs/server.crt");
+let server;
+
+if (certsExist) {
+  const httpsOptions = {
+    key: readFileSync("certs/server.key"),
+    cert: readFileSync("certs/server.crt"),
+  };
+  server = createHttpsServer(httpsOptions, app);
+} else {
+  server = createServer(app);
+}
+
+const httpServer = server;
 
 declare module "http" {
   interface IncomingMessage {
@@ -85,6 +101,7 @@ app.use((req, res, next) => {
   }
 
   const port = parseInt(process.env.PORT || "5000", 10);
+  const protocol = certsExist ? "https" : "http";
   httpServer.listen(
     {
       port,
@@ -92,7 +109,10 @@ app.use((req, res, next) => {
       reusePort: true,
     },
     () => {
-      log(`serving on http://0.0.0.0:${port}`);
+      log(`serving on ${protocol}://0.0.0.0:${port}`);
+      if (certsExist) {
+        log("HTTPS enabled with SSL certificates");
+      }
     },
   );
 })();
