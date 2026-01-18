@@ -1,6 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
+import fs from "fs";
+import path from "path";
 import { storage } from "./storage";
 import { startWatcher, stopWatcher, getWatcherStatus, initializeWatcher } from "./fileWatcher";
 import { startLubanProxy, stopLubanProxy, getLubanProxyStatus, initializeLubanProxy } from "./lubanProxy";
@@ -68,6 +70,138 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
+  // Serve SSL certificate for iOS installation
+  app.get("/certificate", (req, res) => {
+    const certPath = path.join(process.cwd(), "certs", "server.crt");
+    
+    if (!fs.existsSync(certPath)) {
+      return res.status(404).send(`
+        <html>
+          <head><title>Certificate Not Found</title></head>
+          <body style="font-family: system-ui; padding: 40px; text-align: center;">
+            <h1>SSL Certificate Not Found</h1>
+            <p>No certificate has been generated yet.</p>
+            <p>Run <code>npm run generate-certs</code> on your Raspberry Pi to create one.</p>
+          </body>
+        </html>
+      `);
+    }
+    
+    // Read the certificate
+    const cert = fs.readFileSync(certPath);
+    
+    // Set headers for iOS to recognize it as a certificate
+    res.setHeader("Content-Type", "application/x-x509-ca-cert");
+    res.setHeader("Content-Disposition", 'attachment; filename="snapmaker-ca.cer"');
+    res.send(cert);
+  });
+
+  // Show a helpful page for iOS certificate installation
+  app.get("/install-cert", (req, res) => {
+    const certPath = path.join(process.cwd(), "certs", "server.crt");
+    const certExists = fs.existsSync(certPath);
+    
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Install SSL Certificate</title>
+        <style>
+          body { 
+            font-family: -apple-system, system-ui, sans-serif; 
+            padding: 20px; 
+            max-width: 600px; 
+            margin: 0 auto;
+            background: #1a1a1a;
+            color: #fff;
+          }
+          h1 { color: #4ade80; }
+          .step { 
+            background: #2a2a2a; 
+            padding: 15px; 
+            margin: 10px 0; 
+            border-radius: 8px;
+            border-left: 4px solid #4ade80;
+          }
+          .step-num { 
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            background: #4ade80;
+            color: #1a1a1a;
+            border-radius: 50%;
+            text-align: center;
+            font-weight: bold;
+            margin-right: 10px;
+          }
+          .button {
+            display: inline-block;
+            background: #4ade80;
+            color: #1a1a1a;
+            padding: 15px 30px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: bold;
+            margin: 20px 0;
+          }
+          .warning { 
+            background: #433; 
+            padding: 15px; 
+            border-radius: 8px;
+            border-left: 4px solid #f87171;
+          }
+        </style>
+      </head>
+      <body>
+        <h1>Install SSL Certificate</h1>
+        <p>To use this app on your iPhone/iPad, you need to install and trust the SSL certificate.</p>
+        
+        ${certExists ? `
+          <a href="/certificate" class="button">Download Certificate</a>
+          
+          <div class="step">
+            <span class="step-num">1</span>
+            <strong>Tap the button above</strong><br>
+            Safari will prompt you to download a profile. Tap "Allow".
+          </div>
+          
+          <div class="step">
+            <span class="step-num">2</span>
+            <strong>Open Settings</strong><br>
+            Go to Settings - you'll see "Profile Downloaded" near the top. Tap it.
+          </div>
+          
+          <div class="step">
+            <span class="step-num">3</span>
+            <strong>Install the Profile</strong><br>
+            Tap "Install" in the top right, then confirm.
+          </div>
+          
+          <div class="step">
+            <span class="step-num">4</span>
+            <strong>Trust the Certificate</strong><br>
+            Go to Settings → General → About → Certificate Trust Settings.<br>
+            Find the certificate and toggle it ON.
+          </div>
+          
+          <div class="step">
+            <span class="step-num">5</span>
+            <strong>Access via HTTPS</strong><br>
+            Return to Safari and visit the HTTPS version of this app.
+          </div>
+        ` : `
+          <div class="warning">
+            <strong>Certificate Not Generated</strong><br>
+            Run <code>npm run generate-certs</code> on your Raspberry Pi first.
+          </div>
+        `}
+      </body>
+      </html>
+    `);
+  });
+
   app.get("/api/printers", async (req, res) => {
     try {
       const printers = await storage.getAllPrinters();
