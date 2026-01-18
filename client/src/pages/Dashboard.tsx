@@ -125,10 +125,12 @@ export default function Dashboard() {
   const [lightOn, setLightOn] = useState(false);
   const [fanOn, setFanOn] = useState(false);
 
-  const { data: printers = [], isLoading: printersLoading } = useQuery<Printer[]>({
+  const { data: printers = [], isLoading: printersLoading, isFetching: printersFetching, isSuccess: printersSuccess } = useQuery<Printer[]>({
     queryKey: ["/api/printers"],
     refetchInterval: 5000,
   });
+  
+  const printersReady = printersSuccess && !printersLoading;
 
   // Use connected printer if available, otherwise use first printer in list
   const activePrinter = printers.find((p) => p.isConnected);
@@ -593,7 +595,7 @@ export default function Dashboard() {
       <div className="max-w-7xl mx-auto space-y-6">
         
         {/* Printer Connection Section - Show when no printers exist */}
-        {printers.length === 0 && (
+        {printersReady && printers.length === 0 && (
           <Card className="p-6 bg-secondary/20 border-border">
             <div className="flex items-center justify-between mb-4">
               <div>
