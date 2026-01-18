@@ -44,15 +44,6 @@ export const appSettings = pgTable("app_settings", {
   value: text("value"),
 });
 
-export const smartPlugs = pgTable("smart_plugs", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull(),
-  password: text("password").notNull(),
-  deviceId: text("device_id"),
-  isEnabled: boolean("is_enabled").default(true),
-});
-
 export const insertPrinterSchema = createInsertSchema(printers).omit({
   id: true,
   lastSeen: true,
