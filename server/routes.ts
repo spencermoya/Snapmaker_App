@@ -1161,6 +1161,39 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/printers/:id/stats", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const stats = await storage.getPrinterStats(printerId);
+      res.json(stats || {
+        totalPrintTime: 0,
+        totalPrintCount: 0,
+        filamentUsed: 0,
+        lastPrintFilename: null,
+        lastPrintCompletedAt: null,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get printer stats" });
+    }
+  });
+
+  app.put("/api/printers/:id/auto-connect", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const { enabled } = req.body;
+      
+      const printer = await storage.updatePrinter(printerId, { autoConnect: enabled });
+      
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+      
+      res.json({ success: true, autoConnect: enabled });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update auto-connect setting" });
+    }
+  });
+
   // Initialize file watcher and Luban proxy on startup
   initializeWatcher().catch((err) => {
     console.error("Failed to initialize file watcher:", err);

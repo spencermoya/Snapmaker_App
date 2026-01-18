@@ -6,6 +6,7 @@ import { createServer as createHttpsServer } from "https";
 import { readFileSync, existsSync } from "fs";
 import path from "path";
 import { ensureSchema } from "./ensureSchema";
+import { startBackgroundService } from "./backgroundService";
 
 const app = express();
 
@@ -230,6 +231,9 @@ app.use((req, res, next) => {
       if (certsExist) {
         log("HTTPS enabled with SSL certificates");
       }
+      
+      startBackgroundService();
+      log("Background connection service started");
     },
   );
 })();
