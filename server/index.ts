@@ -1,13 +1,40 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
-import { createServer } from "http";
+import { createServer as createHttpServer } from "http";
+import { createServer as createHttpsServer } from "https";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 import { ensureSchema } from "./ensureSchema";
 import { startBackgroundPolling } from "./backgroundPoller";
 import { initializeWebPush } from "./webPush";
 
 const app = express();
-const server = createServer(app);
+
+const certDir = process.env.SSL_CERT_DIR || "./certs";
+const keyPath = join(certDir, "server.key");
+const certPath = join(certDir, "server.crt");
+
+let server: ReturnType<typeof createHttpServer> | ReturnType<typeof createHttpsServer>;
+let useHttps = false;
+
+if (existsSync(keyPath) && existsSync(certPath)) {
+  try {
+    const httpsOptions = {
+      key: readFileSync(keyPath),
+      cert: readFileSync(certPath),
+    };
+    server = createHttpsServer(httpsOptions, app);
+    useHttps = true;
+    console.log("[Server] SSL certificates found, starting HTTPS server");
+  } catch (error) {
+    console.log("[Server] Failed to load SSL certificates, falling back to HTTP:", error);
+    server = createHttpServer(app);
+  }
+} else {
+  console.log("[Server] No SSL certificates found, starting HTTP server");
+  server = createHttpServer(app);
+}
 
 declare module "http" {
   interface IncomingMessage {
@@ -87,6 +114,7 @@ app.use((req, res, next) => {
   }
 
   const port = parseInt(process.env.PORT || "5000", 10);
+  const protocol = useHttps ? "https" : "http";
   server.listen(
     {
       port,
@@ -94,7 +122,7 @@ app.use((req, res, next) => {
       reusePort: true,
     },
     () => {
-      log(`serving on http://0.0.0.0:${port}`);
+      log(`serving on ${protocol}://0.0.0.0:${port}`);
       
       // Initialize services after a short delay to let the server initialize
       setTimeout(async () => {

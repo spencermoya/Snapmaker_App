@@ -9,6 +9,8 @@ import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } f
 import { z } from "zod";
 import { addNotificationClient } from "./notifications";
 import { getVapidPublicKey, initializeWebPush } from "./webPush";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -70,6 +72,148 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
+  const certDir = process.env.SSL_CERT_DIR || "./certs";
+  const certPath = join(certDir, "server.crt");
+
+  app.get("/install-cert", (req, res) => {
+    const certExists = existsSync(certPath);
+    const host = req.get("host") || "your-server-ip:5000";
+    
+    res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Install Certificate - Snapmaker Control</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e; 
+      color: #e0e0e0;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container { max-width: 600px; margin: 0 auto; }
+    h1 { color: #4ade80; margin-bottom: 20px; font-size: 24px; }
+    .step { 
+      background: #252542; 
+      border-radius: 12px; 
+      padding: 20px; 
+      margin-bottom: 16px;
+      border-left: 4px solid #4ade80;
+    }
+    .step-number { 
+      display: inline-block;
+      width: 32px; 
+      height: 32px; 
+      background: #4ade80; 
+      color: #1a1a2e;
+      border-radius: 50%;
+      text-align: center;
+      line-height: 32px;
+      font-weight: bold;
+      margin-right: 12px;
+    }
+    .step h2 { display: inline; font-size: 18px; }
+    .step p { margin-top: 12px; color: #a0a0a0; line-height: 1.6; }
+    .download-btn {
+      display: block;
+      background: #4ade80;
+      color: #1a1a2e;
+      text-decoration: none;
+      padding: 16px 24px;
+      border-radius: 8px;
+      font-weight: bold;
+      text-align: center;
+      margin: 20px 0;
+      font-size: 18px;
+    }
+    .download-btn:active { background: #22c55e; }
+    .warning { 
+      background: #3b2d1a; 
+      border-left-color: #f59e0b;
+      margin-top: 24px;
+    }
+    .warning h2 { color: #f59e0b; }
+    .back-link {
+      display: block;
+      text-align: center;
+      color: #4ade80;
+      margin-top: 24px;
+    }
+    code { 
+      background: #1a1a2e; 
+      padding: 2px 6px; 
+      border-radius: 4px;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Install Certificate on iPhone</h1>
+    
+    ${certExists ? `
+    <a href="/download-cert" class="download-btn">Download Certificate</a>
+    ` : `
+    <div class="step warning">
+      <span class="step-number">!</span>
+      <h2>No Certificate Found</h2>
+      <p>The SSL certificate hasn't been generated yet. Run this on your Raspberry Pi:</p>
+      <p><code>npm run generate-certs</code></p>
+    </div>
+    `}
+    
+    <div class="step">
+      <span class="step-number">1</span>
+      <h2>Download the Certificate</h2>
+      <p>Tap the green button above. Safari will show a message that a profile was downloaded.</p>
+    </div>
+    
+    <div class="step">
+      <span class="step-number">2</span>
+      <h2>Install the Profile</h2>
+      <p>Go to <strong>Settings → General → VPN & Device Management</strong>. You'll see the downloaded profile - tap it and tap <strong>Install</strong>.</p>
+    </div>
+    
+    <div class="step">
+      <span class="step-number">3</span>
+      <h2>Trust the Certificate</h2>
+      <p>Go to <strong>Settings → General → About → Certificate Trust Settings</strong>. Find the certificate and toggle it <strong>ON</strong>.</p>
+    </div>
+    
+    <div class="step">
+      <span class="step-number">4</span>
+      <h2>Add to Home Screen</h2>
+      <p>Open <code>https://${host}</code> in Safari, tap the Share button, and select <strong>Add to Home Screen</strong>.</p>
+    </div>
+    
+    <div class="step warning">
+      <span class="step-number">!</span>
+      <h2>Important</h2>
+      <p>If your Pi's IP address changes, you'll need to regenerate the certificate and repeat this process.</p>
+    </div>
+    
+    <a href="/" class="back-link">← Back to Dashboard</a>
+  </div>
+</body>
+</html>
+    `);
+  });
+
+  app.get("/download-cert", (req, res) => {
+    if (!existsSync(certPath)) {
+      return res.status(404).send("Certificate not found. Run 'npm run generate-certs' first.");
+    }
+    
+    const cert = readFileSync(certPath);
+    res.setHeader("Content-Type", "application/x-x509-ca-cert");
+    res.setHeader("Content-Disposition", "attachment; filename=snapmaker-control.crt");
+    res.send(cert);
+  });
+
   app.get("/api/push/vapid-public-key", async (req, res) => {
     try {
       const publicKey = await getVapidPublicKey();

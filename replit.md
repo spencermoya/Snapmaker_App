@@ -132,7 +132,17 @@ hostname -I
 ```
 
 Then access the dashboard at:
-- http://YOUR_PI_IP:5000
+- https://YOUR_PI_IP:5000 (with SSL certificates)
+- http://YOUR_PI_IP:5000 (without SSL certificates)
+
+### Installing SSL Certificate on iPhone
+If you're using HTTPS with a self-signed certificate, the Home Screen PWA won't work until you install and trust the certificate:
+
+1. Open Safari on your iPhone and go to: `https://YOUR_PI_IP:5000/install-cert`
+2. Tap "Download Certificate"
+3. Go to Settings → General → VPN & Device Management → tap the profile → Install
+4. Go to Settings → General → About → Certificate Trust Settings → enable the certificate
+5. Now you can add the app to your Home Screen and it will work
 
 ### Updating to Latest Version
 ```bash
