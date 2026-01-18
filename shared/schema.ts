@@ -44,50 +44,6 @@ export const appSettings = pgTable("app_settings", {
   value: text("value"),
 });
 
-export const printStats = pgTable("print_stats", {
-  id: serial("id").primaryKey(),
-  printerId: integer("printer_id").references(() => printers.id).notNull(),
-  filename: text("filename").notNull(),
-  printTimeSeconds: integer("print_time_seconds").notNull(),
-  filamentUsedMm: integer("filament_used_mm").default(0),
-  completedAt: timestamp("completed_at").defaultNow(),
-});
-
-export const smartPlugs = pgTable("smart_plugs", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  type: text("type").notNull(),
-  ipAddress: text("ip_address").notNull(),
-  port: integer("port"),
-  deviceId: text("device_id"),
-  credentials: text("credentials"),
-  isEnabled: boolean("is_enabled").default(true),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const conversations = pgTable("conversations", {
-  id: serial("id").primaryKey(),
-  title: text("title").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const messages = pgTable("messages", {
-  id: serial("id").primaryKey(),
-  conversationId: integer("conversation_id").references(() => conversations.id, { onDelete: "cascade" }),
-  role: text("role").notNull(),
-  content: text("content").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const pushSubscriptions = pgTable("push_subscriptions", {
-  id: serial("id").primaryKey(),
-  printerId: integer("printer_id").references(() => printers.id).notNull(),
-  endpoint: text("endpoint").notNull().unique(),
-  p256dh: text("p256dh").notNull(),
-  auth: text("auth").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
 export const insertPrinterSchema = createInsertSchema(printers).omit({
   id: true,
   lastSeen: true,
@@ -109,31 +65,6 @@ export const insertUploadedFileSchema = createInsertSchema(uploadedFiles).omit({
   uploadedAt: true,
 });
 
-export const insertPrintStatSchema = createInsertSchema(printStats).omit({
-  id: true,
-  completedAt: true,
-});
-
-export const insertSmartPlugSchema = createInsertSchema(smartPlugs).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertConversationSchema = createInsertSchema(conversations).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertMessageSchema = createInsertSchema(messages).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertPushSubscriptionSchema = createInsertSchema(pushSubscriptions).omit({
-  id: true,
-  createdAt: true,
-});
-
 export const DEFAULT_ENABLED_MODULES = [
   "status",
   "webcam", 
@@ -141,7 +72,6 @@ export const DEFAULT_ENABLED_MODULES = [
   "jogControls",
   "jobControls",
   "fileList",
-  "stats",
 ];
 
 export type Printer = typeof printers.$inferSelect;
@@ -152,16 +82,6 @@ export type DashboardPreferences = typeof dashboardPreferences.$inferSelect;
 export type UploadedFile = typeof uploadedFiles.$inferSelect;
 export type InsertUploadedFile = z.infer<typeof insertUploadedFileSchema>;
 export type AppSetting = typeof appSettings.$inferSelect;
-export type PrintStat = typeof printStats.$inferSelect;
-export type InsertPrintStat = z.infer<typeof insertPrintStatSchema>;
-export type SmartPlug = typeof smartPlugs.$inferSelect;
-export type InsertSmartPlug = z.infer<typeof insertSmartPlugSchema>;
-export type Conversation = typeof conversations.$inferSelect;
-export type InsertConversation = z.infer<typeof insertConversationSchema>;
-export type Message = typeof messages.$inferSelect;
-export type InsertMessage = z.infer<typeof insertMessageSchema>;
-export type PushSubscription = typeof pushSubscriptions.$inferSelect;
-export type InsertPushSubscription = z.infer<typeof insertPushSubscriptionSchema>;
 
 export type PrinterStatus = {
   state: string;
@@ -174,8 +94,4 @@ export type PrinterStatus = {
   progress: number;
   currentFile: string | null;
   timeRemaining: number | null;
-  elapsedTime: number | null;
-  totalPrintTime: number | null;
-  currentLine: number | null;
-  totalLines: number | null;
 };

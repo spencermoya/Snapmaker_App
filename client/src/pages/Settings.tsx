@@ -1,38 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Trash2, Wifi, WifiOff, ArrowLeft, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Plug, Search, Loader2, Power, Home } from "lucide-react";
+import { Plus, Trash2, Wifi, WifiOff, ArrowLeft, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio } from "lucide-react";
 import { useLocation } from "wouter";
 import type { Printer } from "@shared/schema";
-
-interface SafeSmartPlug {
-  id: number;
-  name: string;
-  type: string;
-  ipAddress: string;
-  port: number | null;
-  deviceId: string | null;
-  isEnabled: boolean | null;
-  createdAt: Date | null;
-}
-
-interface DiscoveredDevice {
-  name: string;
-  type: "homekit" | "matter";
-  ipAddress: string;
-  port: number | null;
-  deviceId: string | null;
-  model: string | null;
-  manufacturer: string | null;
-  category: string | null;
-}
 
 interface SettingsData {
   watchFolder: {
@@ -52,13 +28,6 @@ interface SettingsData {
   };
 }
 
-interface SmartPlugSettings {
-  ipAddress: string | null;
-  enabled: boolean;
-  isOn: boolean;
-  reachable: boolean;
-}
-
 export default function Settings() {
   const [, setLocation] = useLocation();
   const [newPrinterName, setNewPrinterName] = useState("");
@@ -66,10 +35,6 @@ export default function Settings() {
   const [watchFolderPath, setWatchFolderPath] = useState("");
   const [lubanProxyIp, setLubanProxyIp] = useState("");
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [isScanning, setIsScanning] = useState(false);
-  const [discoveredDevices, setDiscoveredDevices] = useState<DiscoveredDevice[]>([]);
-  const [manualPlugIp, setManualPlugIp] = useState("");
-  const [manualPlugName, setManualPlugName] = useState("");
   const queryClient = useQueryClient();
 
   const { data: printers = [], isLoading } = useQuery<Printer[]>({
@@ -78,10 +43,6 @@ export default function Settings() {
 
   const { data: settings } = useQuery<SettingsData>({
     queryKey: ["/api/settings"],
-  });
-
-  const { data: smartPlugs = [] } = useQuery<SafeSmartPlug[]>({
-    queryKey: ["/api/smart-plugs"],
   });
 
   const addPrinterMutation = useMutation({
@@ -199,116 +160,6 @@ export default function Settings() {
       toast.error(error.message);
     },
   });
-
-  const addSmartPlugMutation = useMutation({
-    mutationFn: async (data: { name: string; type: string; ipAddress: string; port?: number }) => {
-      const res = await fetch("/api/smart-plugs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || "Failed to add smart plug");
-      }
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/smart-plugs"] });
-      toast.success("Smart plug added");
-      setManualPlugIp("");
-      setManualPlugName("");
-    },
-    onError: (error: Error) => {
-      toast.error(error.message);
-    },
-  });
-
-  const deleteSmartPlugMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await fetch(`/api/smart-plugs/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/smart-plugs"] });
-      toast.success("Smart plug removed");
-    },
-    onError: () => {
-      toast.error("Failed to remove smart plug");
-    },
-  });
-
-  const toggleSmartPlugMutation = useMutation({
-    mutationFn: async ({ id, isEnabled }: { id: number; isEnabled: boolean }) => {
-      const res = await fetch(`/api/smart-plugs/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isEnabled }),
-      });
-      if (!res.ok) throw new Error("Failed to update");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/smart-plugs"] });
-    },
-    onError: () => {
-      toast.error("Failed to update smart plug");
-    },
-  });
-
-  const [scanError, setScanError] = useState<string | null>(null);
-
-  const handleScanNetwork = async () => {
-    setIsScanning(true);
-    setDiscoveredDevices([]);
-    setScanError(null);
-    try {
-      const res = await fetch("/api/smart-plugs/discover");
-      const data = await res.json();
-      
-      if (!res.ok || !data.success) {
-        const errorDetails = data.details || data.error || "Unknown error";
-        setScanError(errorDetails);
-        toast.error(`Scan failed: ${errorDetails}`);
-        return;
-      }
-      
-      const devices = data.devices || [];
-      setDiscoveredDevices(devices);
-      if (devices.length === 0) {
-        toast.info("No smart plugs found on the network");
-      } else {
-        toast.success(`Found ${devices.length} device(s)`);
-      }
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Network scan failed";
-      setScanError(errorMsg);
-      toast.error(errorMsg);
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
-  const handleAddDiscoveredDevice = (device: DiscoveredDevice) => {
-    addSmartPlugMutation.mutate({
-      name: device.name,
-      type: "homekit",
-      ipAddress: device.ipAddress,
-      port: device.port || 80,
-    });
-  };
-
-  const handleAddManualPlug = () => {
-    if (!manualPlugIp.trim()) {
-      toast.error("Please enter the IP address");
-      return;
-    }
-    addSmartPlugMutation.mutate({
-      name: manualPlugName.trim() || "HomeKit Plug",
-      type: "homekit",
-      ipAddress: manualPlugIp.trim(),
-    });
-  };
 
   const handleAddPrinter = () => {
     if (!newPrinterName.trim() || !newPrinterIp.trim()) {
@@ -739,180 +590,6 @@ export default function Settings() {
               </div>
             </div>
           )}
-        </Card>
-
-        <Card className="p-6 bg-secondary/20 border-border">
-          <div className="flex items-center gap-2 mb-4">
-            <Plug className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold">Smart Plug Control</h2>
-          </div>
-          <p className="text-sm text-muted-foreground mb-4">
-            Control HomeKit-enabled smart plugs to power your printer on/off.
-          </p>
-
-          {smartPlugs.length > 0 && (
-            <div className="space-y-3 mb-6">
-              <h3 className="text-sm font-medium">Configured Devices</h3>
-              {smartPlugs.map((plug) => (
-                <div
-                  key={plug.id}
-                  className="flex items-center gap-3 p-3 bg-secondary/30 border border-border rounded-lg"
-                  data-testid={`card-plug-${plug.id}`}
-                >
-                  <Home className="h-5 w-5 text-orange-400" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{plug.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {plug.ipAddress} • {plug.type}
-                    </p>
-                  </div>
-                  <Switch
-                    checked={plug.isEnabled ?? false}
-                    onCheckedChange={(checked) => 
-                      toggleSmartPlugMutation.mutate({ id: plug.id, isEnabled: checked })
-                    }
-                    data-testid={`switch-plug-${plug.id}`}
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => deleteSmartPlugMutation.mutate(plug.id)}
-                    data-testid={`button-delete-plug-${plug.id}`}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Button
-                  onClick={handleScanNetwork}
-                  disabled={isScanning}
-                  variant="outline"
-                  data-testid="button-scan-network"
-                >
-                  {isScanning ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Search className="h-4 w-4 mr-2" />
-                  )}
-                  {isScanning ? "Scanning..." : "Scan Network"}
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  Find HomeKit smart plugs on your local network
-                </p>
-              </div>
-              {scanError && (
-                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                  <p className="text-sm font-medium text-red-400">Scan Error</p>
-                  <p className="text-xs text-muted-foreground font-mono break-all">{scanError}</p>
-                </div>
-              )}
-            </div>
-
-            {discoveredDevices.length > 0 && (
-              <div className="space-y-2">
-                <h3 className="text-sm font-medium">Discovered Devices</h3>
-                {discoveredDevices.map((device) => {
-                  const alreadyAdded = smartPlugs.some(p => p.ipAddress === device.ipAddress);
-                  const deviceInfo = [
-                    device.manufacturer,
-                    device.model,
-                  ].filter(Boolean).join(" ");
-                  const isMatter = device.type === "matter";
-                  return (
-                    <div
-                      key={device.ipAddress}
-                      className={`flex items-center gap-3 p-3 rounded-lg ${
-                        isMatter 
-                          ? "bg-blue-500/10 border border-blue-500/30" 
-                          : "bg-orange-500/10 border border-orange-500/30"
-                      }`}
-                    >
-                      <Home className={`h-5 w-5 ${isMatter ? "text-blue-400" : "text-orange-400"}`} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-medium truncate">{device.name}</p>
-                          <span className={`text-xs px-1.5 py-0.5 rounded ${
-                            isMatter 
-                              ? "bg-blue-500/20 text-blue-400" 
-                              : "bg-orange-500/20 text-orange-400"
-                          }`}>
-                            {isMatter ? "Matter" : "HomeKit"}
-                          </span>
-                          {device.category && (
-                            <span className="text-xs px-1.5 py-0.5 bg-secondary text-muted-foreground rounded">
-                              {device.category}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {deviceInfo || device.manufacturer || (isMatter ? "Thread/Matter" : "HomeKit")} • {device.ipAddress}
-                        </p>
-                      </div>
-                      {alreadyAdded ? (
-                        <span className="text-xs text-green-500">Added</span>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleAddDiscoveredDevice(device)}
-                          disabled={addSmartPlugMutation.isPending}
-                          data-testid={`button-add-device-${device.ipAddress}`}
-                        >
-                          <Plus className="h-4 w-4 mr-1" />
-                          Add
-                        </Button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            <Separator className="my-4" />
-
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium">Add Manually</h3>
-              <p className="text-xs text-muted-foreground">
-                If your HomeKit smart plug wasn't discovered, you can add it manually.
-              </p>
-              <div className="grid gap-3">
-                <div className="grid gap-2">
-                  <Label htmlFor="manual-plug-name">Name (optional)</Label>
-                  <Input
-                    id="manual-plug-name"
-                    placeholder="e.g., Printer Plug"
-                    value={manualPlugName}
-                    onChange={(e) => setManualPlugName(e.target.value)}
-                    data-testid="input-manual-plug-name"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="manual-plug-ip">IP Address</Label>
-                  <Input
-                    id="manual-plug-ip"
-                    placeholder="e.g., 192.168.1.100"
-                    value={manualPlugIp}
-                    onChange={(e) => setManualPlugIp(e.target.value)}
-                    data-testid="input-manual-plug-ip"
-                  />
-                </div>
-                <Button
-                  onClick={handleAddManualPlug}
-                  disabled={addSmartPlugMutation.isPending}
-                  data-testid="button-add-manual-plug"
-                >
-                  <Home className="h-4 w-4 mr-2" />
-                  Add HomeKit Plug
-                </Button>
-              </div>
-            </div>
-          </div>
         </Card>
 
         <Card className="p-6 bg-blue-500/10 border-blue-500/50">

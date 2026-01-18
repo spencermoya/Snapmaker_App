@@ -1,40 +1,11 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
-import { createServer as createHttpServer } from "http";
-import { createServer as createHttpsServer } from "https";
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
+import { createServer } from "http";
 import { ensureSchema } from "./ensureSchema";
-import { startBackgroundPolling } from "./backgroundPoller";
-import { initializeWebPush } from "./webPush";
 
 const app = express();
-
-const certDir = process.env.SSL_CERT_DIR || "./certs";
-const keyPath = join(certDir, "server.key");
-const certPath = join(certDir, "server.crt");
-
-let server: ReturnType<typeof createHttpServer> | ReturnType<typeof createHttpsServer>;
-let useHttps = false;
-
-if (existsSync(keyPath) && existsSync(certPath)) {
-  try {
-    const httpsOptions = {
-      key: readFileSync(keyPath),
-      cert: readFileSync(certPath),
-    };
-    server = createHttpsServer(httpsOptions, app);
-    useHttps = true;
-    console.log("[Server] SSL certificates found, starting HTTPS server");
-  } catch (error) {
-    console.log("[Server] Failed to load SSL certificates, falling back to HTTP:", error);
-    server = createHttpServer(app);
-  }
-} else {
-  console.log("[Server] No SSL certificates found, starting HTTP server");
-  server = createHttpServer(app);
-}
+const httpServer = createServer(app);
 
 declare module "http" {
   interface IncomingMessage {
@@ -96,7 +67,7 @@ app.use((req, res, next) => {
     log(`Failed to ensure database schema: ${error}`, "db");
   }
 
-  await registerRoutes(server, app);
+  await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -110,25 +81,18 @@ app.use((req, res, next) => {
     serveStatic(app);
   } else {
     const { setupVite } = await import("./vite");
-    await setupVite(server, app);
+    await setupVite(httpServer, app);
   }
 
   const port = parseInt(process.env.PORT || "5000", 10);
-  const protocol = useHttps ? "https" : "http";
-  server.listen(
+  httpServer.listen(
     {
       port,
       host: "0.0.0.0",
       reusePort: true,
     },
     () => {
-      log(`serving on ${protocol}://0.0.0.0:${port}`);
-      
-      // Initialize services after a short delay to let the server initialize
-      setTimeout(async () => {
-        await initializeWebPush();
-        startBackgroundPolling();
-      }, 3000);
+      log(`serving on http://0.0.0.0:${port}`);
     },
   );
 })();

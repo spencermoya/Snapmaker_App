@@ -5,10 +5,7 @@ import PrinterStatus from "@/components/PrinterStatus";
 import TemperatureChart from "@/components/TemperatureChart";
 import JogControls from "@/components/JogControls";
 import FileList from "@/components/FileList";
-import PrintStatsPanel from "@/components/PrintStats";
 import WebcamFeed from "@/components/WebcamFeed";
-import NotificationToggle from "@/components/NotificationToggle";
-import { useNotifications } from "@/hooks/useNotifications";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -16,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Power, Settings, Fan, Lightbulb, PauseCircle, StopCircle, Plus, RefreshCw, Wifi, WifiOff, Trash2, LayoutGrid, Upload, Plug, Clock, BarChart3, Bot } from "lucide-react";
+import { Power, Settings, Fan, Lightbulb, PauseCircle, StopCircle, Plus, RefreshCw, Wifi, WifiOff, Trash2, LayoutGrid, Upload } from "lucide-react";
 import { toast } from "sonner";
 import type { Printer, PrinterStatus as PrinterStatusType } from "@shared/schema";
 import { DEFAULT_ENABLED_MODULES } from "@shared/schema";
@@ -34,7 +31,6 @@ const MODULE_REGISTRY: ModuleConfig[] = [
   { id: "jogControls", title: "Jog Controls", column: "right" },
   { id: "jobControls", title: "Job Controls", column: "right" },
   { id: "fileList", title: "File List", column: "right" },
-  { id: "stats", title: "Print Stats", column: "right" },
 ];
 
 const AddPrinterForm = memo(function AddPrinterForm({
@@ -127,60 +123,6 @@ export default function Dashboard() {
   const [lightOn, setLightOn] = useState(false);
   const [fanOn, setFanOn] = useState(false);
 
-  interface SmartPlug {
-    id: number;
-    name: string;
-    type: string;
-    ipAddress: string;
-    isEnabled: boolean | null;
-    hasCredentials: boolean;
-  }
-
-  interface SmartPlugStatus {
-    isOn: boolean;
-    reachable: boolean;
-  }
-
-  const { data: smartPlugs = [] } = useQuery<SmartPlug[]>({
-    queryKey: ["/api/smart-plugs"],
-  });
-
-  const enabledPlug = smartPlugs.find(p => p.isEnabled && p.hasCredentials);
-
-  const { data: plugStatus } = useQuery<SmartPlugStatus>({
-    queryKey: ["/api/smart-plugs", enabledPlug?.id, "status"],
-    queryFn: async () => {
-      if (!enabledPlug) return { isOn: false, reachable: false };
-      const res = await fetch(`/api/smart-plugs/${enabledPlug.id}/status`);
-      return res.json();
-    },
-    enabled: !!enabledPlug,
-    refetchInterval: 10000,
-  });
-
-  const plugPowerMutation = useMutation({
-    mutationFn: async (turnOn: boolean) => {
-      if (!enabledPlug) throw new Error("No smart plug configured");
-      const res = await fetch(`/api/smart-plugs/${enabledPlug.id}/power`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ turnOn }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to control plug");
-      }
-      return res.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/smart-plugs", enabledPlug?.id, "status"] });
-      toast.success(data.message);
-    },
-    onError: (error: Error) => {
-      toast.error(error.message);
-    },
-  });
-
   const { data: printers = [], isLoading: printersLoading } = useQuery<Printer[]>({
     queryKey: ["/api/printers"],
     refetchInterval: 5000,
@@ -192,8 +134,6 @@ export default function Dashboard() {
   const isConnected = !!activePrinter;
   const disconnectedPrinter = printers.find((p) => !p.isConnected && p.token);
 
-  useNotifications(selectedPrinter?.id);
-
   const { data: preferencesData, isLoading: preferencesLoading } = useQuery<{ enabledModules: string[] }>({
     queryKey: [`/api/printers/${selectedPrinter?.id}/dashboard-preferences`],
     enabled: !!selectedPrinter,
@@ -202,7 +142,6 @@ export default function Dashboard() {
 
   const enabledModules = preferencesData?.enabledModules ?? DEFAULT_ENABLED_MODULES;
 
-  
   const updatePreferencesMutation = useMutation({
     mutationFn: async ({ printerId, enabledModules }: { printerId: number; enabledModules: string[] }) => {
       const res = await fetch(`/api/printers/${printerId}/dashboard-preferences`, {
@@ -557,11 +496,6 @@ export default function Dashboard() {
             progress={status?.progress || 0} 
             timeLeft={formatTimeRemaining(status?.timeRemaining || null)}
             timeRemainingSeconds={status?.timeRemaining}
-            elapsedTime={formatTimeRemaining(status?.elapsedTime || null)}
-            elapsedTimeSeconds={status?.elapsedTime}
-            totalPrintTime={status?.totalPrintTime}
-            currentLine={status?.currentLine}
-            totalLines={status?.totalLines}
             filename={status?.currentFile || (isConnected ? "No active job" : "Printer offline")} 
           />
         );
@@ -605,8 +539,6 @@ export default function Dashboard() {
         );
       case "fileList":
         return <FileList key={moduleId} printerId={selectedPrinter.id} />;
-      case "stats":
-        return <PrintStatsPanel key={moduleId} printerId={selectedPrinter.id} />;
       default:
         return null;
     }
@@ -623,30 +555,16 @@ export default function Dashboard() {
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
-      {/* Fixed Buttons - Top Right */}
-      <div className="fixed top-4 right-4 z-40 flex gap-2">
-        <div className="bg-background/80 backdrop-blur-sm rounded-md border">
-          <NotificationToggle printerId={selectedPrinter?.id} />
-        </div>
-        <Button
-          variant="outline"
-          size="icon"
-          className="bg-background/80 backdrop-blur-sm text-blue-400 hover:text-blue-300 hover:bg-blue-900/30"
-          onClick={() => setLocation("/ai")}
-          data-testid="button-ai"
-        >
-          <Bot className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="outline"
-          size="icon"
-          className="bg-background/80 backdrop-blur-sm text-muted-foreground hover:text-foreground"
-          onClick={() => setLocation("/settings")}
-          data-testid="button-settings"
-        >
-          <Settings className="h-4 w-4" />
-        </Button>
-      </div>
+      {/* Fixed Settings Button - Top Right */}
+      <Button
+        variant="outline"
+        size="icon"
+        className="fixed top-4 right-4 z-40 bg-background/80 backdrop-blur-sm text-muted-foreground hover:text-foreground"
+        onClick={() => setLocation("/settings")}
+        data-testid="button-settings"
+      >
+        <Settings className="h-4 w-4" />
+      </Button>
 
       {isDragging && (
         <div 
@@ -693,22 +611,15 @@ export default function Dashboard() {
                 <h1 className="text-3xl font-bold tracking-tight text-foreground flex items-center gap-3">
                   <span data-testid="text-printer-name">{selectedPrinter.name}</span>
                   {isConnected ? (
-                    <button
-                      onClick={() => disconnectMutation.mutate(selectedPrinter.id)}
-                      disabled={disconnectMutation.isPending}
-                      className="text-xs font-mono font-normal border px-2 py-0.5 rounded-full text-green-500 border-green-500/50 hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/50 transition-colors cursor-pointer disabled:opacity-50"
-                      data-testid="button-status-connected"
-                      title="Tap to disconnect"
-                    >
-                      {disconnectMutation.isPending ? "disconnecting..." : (status?.state || "idle")}
-                    </button>
+                    <span className="text-xs font-mono font-normal border px-2 py-0.5 rounded-full text-muted-foreground">
+                      {status?.state || "idle"}
+                    </span>
                   ) : (
                     <button
                       onClick={() => connectMutation.mutate(selectedPrinter.id)}
                       disabled={connectMutation.isPending}
                       className="text-xs font-mono font-normal border px-2 py-0.5 rounded-full text-amber-500 border-amber-500/50 hover:bg-amber-500/20 hover:border-amber-500 transition-colors cursor-pointer disabled:opacity-50"
                       data-testid="button-reconnect-offline"
-                      title="Tap to connect"
                     >
                       {connectMutation.isPending ? "connecting..." : "offline"}
                     </button>
@@ -720,19 +631,6 @@ export default function Dashboard() {
               </div>
               
               <div className="flex gap-3">
-                {enabledPlug && (
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className={`${plugStatus?.isOn ? 'text-green-500 border-green-500/50' : plugStatus?.reachable === false ? 'text-red-500/50 border-red-500/30' : 'text-muted-foreground'} hover:text-foreground`}
-                    onClick={() => plugPowerMutation.mutate(!plugStatus?.isOn)}
-                    disabled={plugPowerMutation.isPending || !plugStatus?.reachable}
-                    data-testid="button-plug-power"
-                    title={plugStatus?.reachable === false ? "Smart plug not reachable" : plugStatus?.isOn ? "Turn off smart plug" : "Turn on smart plug"}
-                  >
-                    <Plug className="h-4 w-4" />
-                  </Button>
-                )}
                 <Button
                   variant="outline"
                   size="icon"
@@ -852,7 +750,6 @@ export default function Dashboard() {
                   {renderModule("jogControls")}
                   {renderModule("jobControls")}
                   {renderModule("fileList")}
-                  {renderModule("stats")}
                 </div>
               )}
 

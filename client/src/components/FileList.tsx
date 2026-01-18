@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { FileCode, Play, RefreshCw, Upload, Trash2, Info, AlertCircle, X, Calendar, FolderInput, Clock, Download, Layers } from "lucide-react";
+import { FileCode, Play, RefreshCw, Upload, Trash2, Info, AlertCircle, X, Calendar, FolderInput, Clock } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useState, useRef, useCallback, useMemo } from "react";
@@ -154,21 +154,6 @@ export default function FileList({ printerId }: FileListProps) {
     }
   }, [previewFile, printMutation]);
 
-  const handleDownload = useCallback(() => {
-    if (previewFile?.fileContent) {
-      const blob = new Blob([previewFile.fileContent], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = previewFile.filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      toast.success("Download started");
-    }
-  }, [previewFile]);
-
   const formatDate = (dateString: string) => {
     try {
       return new Date(dateString).toLocaleDateString(undefined, {
@@ -183,41 +168,38 @@ export default function FileList({ printerId }: FileListProps) {
     }
   };
 
-  const parseGcodeMetadata = (gcode: string | null): { time: number | null; filamentLength: number | null; filamentWeight: number | null } => {
-    if (!gcode) return { time: null, filamentLength: null, filamentWeight: null };
+  const parseEstimatedTime = (gcode: string | null): number | null => {
+    if (!gcode) return null;
     
-    const headerSection = gcode.slice(0, 10000);
-    let time: number | null = null;
-    let filamentLength: number | null = null;
-    let filamentWeight: number | null = null;
-    
-    const lines = headerSection.split('\n');
+    const lines = gcode.slice(0, 8000).split('\n');
     
     for (const line of lines) {
-      if (time === null) {
-        let match = line.match(/;estimated_time\(s\):\s*([\d.]+)/i);
-        if (match) {
-          time = Math.round(parseFloat(match[1]));
-        } else {
-          match = line.match(/;TIME:\s*(\d+)/i);
-          if (match) time = parseInt(match[1], 10);
+      let match = line.match(/;TIME:(\d+)/i);
+      if (match) return parseInt(match[1], 10);
+      
+      match = line.match(/;estimated_time\(s\):\s*(\d+)/i);
+      if (match) return parseInt(match[1], 10);
+      
+      match = line.match(/;\s*estimated_print_time\s*=\s*(\d+)/i);
+      if (match) return parseInt(match[1], 10);
+      
+      match = line.match(/;\s*estimated printing time[^=]*[=:]\s*((\d+)h\s*)?((\d+)m\s*)?((\d+)s)?/i);
+      if (match) {
+        const hours = parseInt(match[2] || '0', 10);
+        const minutes = parseInt(match[4] || '0', 10);
+        const seconds = parseInt(match[6] || '0', 10);
+        if (hours > 0 || minutes > 0 || seconds > 0) {
+          return hours * 3600 + minutes * 60 + seconds;
         }
       }
       
-      if (filamentLength === null) {
-        const match = line.match(/;matierial_length:\s*([\d.]+)/i);
-        if (match) filamentLength = parseFloat(match[1]);
-      }
+      match = line.match(/;PRINT_TIME:\s*(\d+)/i);
+      if (match) return parseInt(match[1], 10);
       
-      if (filamentWeight === null) {
-        const match = line.match(/;matierial_weight:\s*([\d.]+)/i);
-        if (match) filamentWeight = parseFloat(match[1]);
-      }
-      
-      if (time !== null && filamentLength !== null && filamentWeight !== null) break;
+      match = line.match(/;\s*print_time\s*=\s*(\d+)/i);
+      if (match) return parseInt(match[1], 10);
     }
-    
-    return { time, filamentLength, filamentWeight };
+    return null;
   };
 
   const formatPrintTime = (seconds: number | null): string => {
@@ -230,20 +212,8 @@ export default function FileList({ printerId }: FileListProps) {
     return `${minutes}m`;
   };
 
-  const formatFilament = (lengthM: number | null, weightG: number | null): string => {
-    if (lengthM === null && weightG === null) return "Unknown";
-    const parts: string[] = [];
-    if (lengthM !== null && lengthM > 0) {
-      parts.push(`${lengthM.toFixed(2)}m`);
-    }
-    if (weightG !== null && weightG > 0) {
-      parts.push(`${weightG.toFixed(1)}g`);
-    }
-    return parts.length > 0 ? parts.join(" / ") : "Unknown";
-  };
-
-  const gcodeMetadata = useMemo(() => {
-    return parseGcodeMetadata(previewFile?.fileContent || null);
+  const estimatedTime = useMemo(() => {
+    return parseEstimatedTime(previewFile?.fileContent || null);
   }, [previewFile?.fileContent]);
 
   const getSourceLabel = (source: string) => {
@@ -529,14 +499,7 @@ export default function FileList({ printerId }: FileListProps) {
                     <Clock className="h-4 w-4" />
                     <span>Est. Print Time: </span>
                     <span className="text-foreground font-medium" data-testid="preview-print-time">
-                      {formatPrintTime(gcodeMetadata.time)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Layers className="h-4 w-4" />
-                    <span>Filament: </span>
-                    <span className="text-foreground font-medium" data-testid="preview-filament">
-                      {formatFilament(gcodeMetadata.filamentLength, gcodeMetadata.filamentWeight)}
+                      {formatPrintTime(estimatedTime)}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-muted-foreground">
@@ -569,27 +532,15 @@ export default function FileList({ printerId }: FileListProps) {
               <X className="h-4 w-4 mr-2" />
               Close
             </Button>
-            <div className="flex gap-2 flex-1 sm:flex-none">
-              <Button
-                variant="secondary"
-                onClick={handleDownload}
-                disabled={!previewFile?.fileContent}
-                className="flex-1"
-                data-testid="button-download-file"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Download
-              </Button>
-              <Button
-                onClick={handleStartPrint}
-                disabled={printMutation.isPending || !previewFile?.fileContent}
-                className="flex-1"
-                data-testid="button-start-print"
-              >
-                <Play className="h-4 w-4 mr-2" />
-                {printMutation.isPending ? "Starting..." : "Print"}
-              </Button>
-            </div>
+            <Button
+              onClick={handleStartPrint}
+              disabled={printMutation.isPending || !previewFile?.fileContent}
+              className="flex-1 sm:flex-none"
+              data-testid="button-start-print"
+            >
+              <Play className="h-4 w-4 mr-2" />
+              {printMutation.isPending ? "Starting..." : "Start Print"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

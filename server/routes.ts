@@ -7,10 +7,6 @@ import { startLubanProxy, stopLubanProxy, getLubanProxyStatus, initializeLubanPr
 import { extractThumbnail } from "./thumbnailExtractor";
 import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } from "@shared/schema";
 import { z } from "zod";
-import { addNotificationClient } from "./notifications";
-import { getVapidPublicKey, initializeWebPush } from "./webPush";
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -72,219 +68,6 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
-  const certDir = process.env.SSL_CERT_DIR || "./certs";
-  const certPath = join(certDir, "server.crt");
-
-  app.get("/install-cert", (req, res) => {
-    const certExists = existsSync(certPath);
-    const host = req.get("host") || "your-server-ip:5000";
-    
-    res.send(`
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Install Certificate - Snapmaker Control</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { 
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #1a1a2e; 
-      color: #e0e0e0;
-      min-height: 100vh;
-      padding: 20px;
-    }
-    .container { max-width: 600px; margin: 0 auto; }
-    h1 { color: #4ade80; margin-bottom: 20px; font-size: 24px; }
-    .step { 
-      background: #252542; 
-      border-radius: 12px; 
-      padding: 20px; 
-      margin-bottom: 16px;
-      border-left: 4px solid #4ade80;
-    }
-    .step-number { 
-      display: inline-block;
-      width: 32px; 
-      height: 32px; 
-      background: #4ade80; 
-      color: #1a1a2e;
-      border-radius: 50%;
-      text-align: center;
-      line-height: 32px;
-      font-weight: bold;
-      margin-right: 12px;
-    }
-    .step h2 { display: inline; font-size: 18px; }
-    .step p { margin-top: 12px; color: #a0a0a0; line-height: 1.6; }
-    .download-btn {
-      display: block;
-      background: #4ade80;
-      color: #1a1a2e;
-      text-decoration: none;
-      padding: 16px 24px;
-      border-radius: 8px;
-      font-weight: bold;
-      text-align: center;
-      margin: 20px 0;
-      font-size: 18px;
-    }
-    .download-btn:active { background: #22c55e; }
-    .warning { 
-      background: #3b2d1a; 
-      border-left-color: #f59e0b;
-      margin-top: 24px;
-    }
-    .warning h2 { color: #f59e0b; }
-    .back-link {
-      display: block;
-      text-align: center;
-      color: #4ade80;
-      margin-top: 24px;
-    }
-    code { 
-      background: #1a1a2e; 
-      padding: 2px 6px; 
-      border-radius: 4px;
-      font-family: monospace;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>Install Certificate on iPhone</h1>
-    
-    ${certExists ? `
-    <a href="/download-cert" class="download-btn">Download Certificate</a>
-    ` : `
-    <div class="step warning">
-      <span class="step-number">!</span>
-      <h2>No Certificate Found</h2>
-      <p>The SSL certificate hasn't been generated yet. Run this on your Raspberry Pi:</p>
-      <p><code>npm run generate-certs</code></p>
-    </div>
-    `}
-    
-    <div class="step">
-      <span class="step-number">1</span>
-      <h2>Download the Certificate</h2>
-      <p>Tap the green button above. Safari will show a message that a profile was downloaded.</p>
-    </div>
-    
-    <div class="step">
-      <span class="step-number">2</span>
-      <h2>Install the Profile</h2>
-      <p>Go to <strong>Settings → General → VPN & Device Management</strong>. You'll see the downloaded profile - tap it and tap <strong>Install</strong>.</p>
-    </div>
-    
-    <div class="step">
-      <span class="step-number">3</span>
-      <h2>Trust the Certificate</h2>
-      <p>Go to <strong>Settings → General → About → Certificate Trust Settings</strong>. Find the certificate and toggle it <strong>ON</strong>.</p>
-    </div>
-    
-    <div class="step">
-      <span class="step-number">4</span>
-      <h2>Add to Home Screen</h2>
-      <p>Open <code>https://${host}</code> in Safari, tap the Share button, and select <strong>Add to Home Screen</strong>.</p>
-    </div>
-    
-    <div class="step warning">
-      <span class="step-number">!</span>
-      <h2>Important</h2>
-      <p>If your Pi's IP address changes, you'll need to regenerate the certificate and repeat this process.</p>
-    </div>
-    
-    <a href="/" class="back-link">← Back to Dashboard</a>
-  </div>
-</body>
-</html>
-    `);
-  });
-
-  app.get("/download-cert", (req, res) => {
-    if (!existsSync(certPath)) {
-      return res.status(404).send("Certificate not found. Run 'npm run generate-certs' first.");
-    }
-    
-    const cert = readFileSync(certPath);
-    res.setHeader("Content-Type", "application/x-x509-ca-cert");
-    res.setHeader("Content-Disposition", "attachment; filename=snapmaker-control.crt");
-    res.send(cert);
-  });
-
-  app.get("/api/push/vapid-public-key", async (req, res) => {
-    try {
-      const publicKey = await getVapidPublicKey();
-      if (!publicKey) {
-        return res.status(503).json({ error: "Web Push not configured" });
-      }
-      res.json({ publicKey });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get VAPID key" });
-    }
-  });
-
-  app.post("/api/printers/:id/push-subscription", async (req, res) => {
-    const printerId = parseInt(req.params.id);
-    if (isNaN(printerId)) {
-      return res.status(400).json({ error: "Invalid printer ID" });
-    }
-
-    const { endpoint, keys } = req.body;
-    if (!endpoint || !keys?.p256dh || !keys?.auth) {
-      return res.status(400).json({ error: "Invalid subscription data" });
-    }
-
-    try {
-      const subscription = await storage.addPushSubscription({
-        printerId,
-        endpoint,
-        p256dh: keys.p256dh,
-        auth: keys.auth,
-      });
-      res.json({ success: true, id: subscription.id });
-    } catch (error) {
-      console.error("Failed to save push subscription:", error);
-      res.status(500).json({ error: "Failed to save subscription" });
-    }
-  });
-
-  app.delete("/api/push-subscription", async (req, res) => {
-    const { endpoint } = req.body;
-    if (!endpoint) {
-      return res.status(400).json({ error: "Endpoint required" });
-    }
-
-    try {
-      await storage.deletePushSubscription(endpoint);
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete subscription" });
-    }
-  });
-
-  app.get("/api/printers/:id/notifications", async (req, res) => {
-    const printerId = parseInt(req.params.id);
-    if (isNaN(printerId)) {
-      return res.status(400).json({ error: "Invalid printer ID" });
-    }
-
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.setHeader("X-Accel-Buffering", "no");
-    
-    res.write(`data: ${JSON.stringify({ type: "connected", printerId })}\n\n`);
-    
-    addNotificationClient(printerId, res);
-    
-    req.on("close", () => {
-      res.end();
-    });
-  });
-
   app.get("/api/printers", async (req, res) => {
     try {
       const printers = await storage.getAllPrinters();
@@ -319,9 +102,6 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Printer not found" });
       }
 
-      console.log(`[Connect] Attempting connection to printer ${printerId} at ${printer.ipAddress}`);
-      console.log(`[Connect] Existing token: ${printer.token ? printer.token.substring(0, 8) + '...' : 'null'}`);
-
       const existingToken = printer.token || "";
       const result = await snapmakerRequest(
         printer.ipAddress,
@@ -331,16 +111,12 @@ export async function registerRoutes(
         existingToken
       );
 
-      console.log(`[Connect] Response from printer:`, JSON.stringify(result));
-
       if (result.token) {
-        console.log(`[Connect] Got new token: ${result.token.substring(0, 8)}... - SAVING to database`);
         await storage.updatePrinter(printerId, {
           token: result.token,
           isConnected: true,
           lastSeen: new Date(),
         });
-        console.log(`[Connect] Token saved successfully for printer ${printerId}`);
         return res.json({
           message: "Connected successfully",
           requiresConfirmation: false,
@@ -348,14 +124,12 @@ export async function registerRoutes(
       }
 
       if (result.status === 204) {
-        console.log(`[Connect] Printer requires touchscreen confirmation`);
         return res.json({
           message: "Please confirm connection on printer touchscreen, then click Connect again",
           requiresConfirmation: true,
         });
       }
 
-      console.log(`[Connect] Connected but no token in response - marking as connected without token`);
       await storage.updatePrinter(printerId, {
         isConnected: true,
         lastSeen: new Date(),
@@ -366,7 +140,6 @@ export async function registerRoutes(
         requiresConfirmation: false,
       });
     } catch (error) {
-      console.error(`[Connect] Error:`, error);
       res.status(500).json({
         error: error instanceof Error ? error.message : "Failed to connect to printer",
       });
@@ -394,70 +167,23 @@ export async function registerRoutes(
         printer.token
       );
 
-      // Debug logging to see raw API response
-      console.log("[Snapmaker API] Raw status response:", JSON.stringify(statusData, null, 2));
-
       await storage.updatePrinter(printerId, {
         isConnected: true,
         lastSeen: new Date(),
       });
 
-      // Parse progress - Snapmaker typically returns percentage as whole number (0-100)
-      // Only treat as fractional if the value has decimals AND is less than 1
-      // (e.g., 0.5432 would be treated as a fraction, but 1 or 50 would not)
-      let progress = statusData.progress ?? 0;
-      const progressStr = String(statusData.progress ?? 0);
-      const hasFractionalPart = progressStr.includes('.') && parseFloat(progressStr) !== Math.floor(parseFloat(progressStr));
-      if (hasFractionalPart && progress < 1) {
-        // Only convert if it's clearly a fractional value like 0.5432
-        progress = progress * 100;
-      }
-
-      // Parse elapsed time - may be in seconds or milliseconds
-      let elapsedTime = statusData.elapsedTime ?? statusData.elapsed_time ?? statusData.elapsed ?? null;
-      
-      // Parse time remaining - check multiple possible field names
-      let timeRemaining = statusData.estimatedTime ?? statusData.estimated_time ?? 
-                          statusData.time_remaining ?? statusData.timeRemaining ?? 
-                          statusData.remainingTime ?? statusData.remaining_time ?? null;
-      
-      // Parse total print time
-      let totalPrintTime = statusData.printTime ?? statusData.print_time ?? 
-                           statusData.totalTime ?? statusData.total_time ?? null;
-
-      // Parse G-code line progress for accurate percentage
-      const currentLine = statusData.currentLine ?? statusData.current_line ?? 
-                          statusData.lineNumber ?? statusData.line_number ?? null;
-      const totalLines = statusData.totalLines ?? statusData.total_lines ?? 
-                         statusData.totalLine ?? statusData.total_line ?? null;
-
-      // Calculate progress from lines if available and more accurate
-      if (currentLine !== null && totalLines !== null && totalLines > 0) {
-        const lineProgress = (currentLine / totalLines) * 100;
-        // Use line-based progress if it seems more accurate (within reasonable bounds)
-        if (lineProgress >= 0 && lineProgress <= 100) {
-          progress = lineProgress;
-        }
-      }
-
       const status: PrinterStatus = {
         state: statusData.status || statusData.state || "idle",
         temperature: {
-          nozzle: statusData.temperature?.nozzle ?? statusData.nozzleTemp ?? 0,
-          bed: statusData.temperature?.bed ?? statusData.bedTemp ?? 0,
-          targetNozzle: statusData.temperature?.target_nozzle ?? statusData.temperature?.targetNozzle ?? statusData.nozzleTarget ?? 0,
-          targetBed: statusData.temperature?.target_bed ?? statusData.temperature?.targetBed ?? statusData.bedTarget ?? 0,
+          nozzle: statusData.temperature?.nozzle || 0,
+          bed: statusData.temperature?.bed || 0,
+          targetNozzle: statusData.temperature?.target_nozzle || 0,
+          targetBed: statusData.temperature?.target_bed || 0,
         },
-        progress: Math.round(progress * 100) / 100, // Round to 2 decimal places
-        currentFile: statusData.current_file ?? statusData.currentFile ?? statusData.filename ?? statusData.fileName ?? null,
-        timeRemaining: timeRemaining,
-        elapsedTime: elapsedTime,
-        totalPrintTime: totalPrintTime,
-        currentLine: currentLine,
-        totalLines: totalLines,
+        progress: statusData.progress || 0,
+        currentFile: statusData.current_file || null,
+        timeRemaining: statusData.time_remaining || null,
       };
-
-      console.log("[Snapmaker API] Parsed status:", JSON.stringify(status, null, 2));
 
       res.json(status);
     } catch (error) {
@@ -489,6 +215,7 @@ export async function registerRoutes(
 
       await storage.updatePrinter(printerId, {
         isConnected: false,
+        token: null,
       });
 
       res.json({ message: "Disconnected successfully" });
@@ -1297,313 +1024,6 @@ export async function registerRoutes(
       res.status(500).json({
         error: error instanceof Error ? error.message : "Failed to configure Luban proxy",
       });
-    }
-  });
-
-  // Print stats endpoints
-  app.get("/api/printers/:id/stats", async (req, res) => {
-    try {
-      const printerId = parseInt(req.params.id);
-      const totals = await storage.getPrintStatsTotals(printerId);
-      res.json(totals);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get print stats" });
-    }
-  });
-
-  app.post("/api/printers/:id/stats", async (req, res) => {
-    try {
-      const printerId = parseInt(req.params.id);
-      if (isNaN(printerId)) {
-        return res.status(400).json({ error: "Invalid printer ID" });
-      }
-
-      const { filename, printTimeSeconds, filamentUsedMm } = req.body;
-      
-      if (!filename || typeof filename !== "string" || filename.trim().length === 0) {
-        return res.status(400).json({ error: "filename is required and must be a non-empty string" });
-      }
-      
-      if (typeof printTimeSeconds !== "number" || printTimeSeconds < 0 || !Number.isInteger(printTimeSeconds)) {
-        return res.status(400).json({ error: "printTimeSeconds must be a non-negative integer" });
-      }
-
-      const filamentValue = filamentUsedMm ?? 0;
-      if (typeof filamentValue !== "number" || filamentValue < 0) {
-        return res.status(400).json({ error: "filamentUsedMm must be a non-negative number" });
-      }
-
-      const stat = await storage.addPrintStat({
-        printerId,
-        filename: filename.trim(),
-        printTimeSeconds,
-        filamentUsedMm: Math.round(filamentValue),
-      });
-      
-      res.json(stat);
-    } catch (error) {
-      console.error("Failed to add print stat:", error);
-      res.status(500).json({ error: "Failed to add print stat" });
-    }
-  });
-
-  app.get("/api/printers/:id/stats/history", async (req, res) => {
-    try {
-      const printerId = parseInt(req.params.id);
-      const stats = await storage.getPrintStats(printerId);
-      res.json(stats);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get print history" });
-    }
-  });
-
-  app.get("/api/printers/:id/stats/period", async (req, res) => {
-    try {
-      const printerId = parseInt(req.params.id);
-      const period = req.query.period as string || "all";
-      
-      const now = new Date();
-      let since: Date;
-      
-      switch (period) {
-        case "today":
-          since = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          break;
-        case "week":
-          since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          break;
-        case "month":
-          since = new Date(now.getFullYear(), now.getMonth(), 1);
-          break;
-        case "year":
-          since = new Date(now.getFullYear(), 0, 1);
-          break;
-        case "all":
-        default:
-          const totals = await storage.getPrintStatsTotals(printerId);
-          return res.json(totals);
-      }
-      
-      const stats = await storage.getPrintStatsByPeriod(printerId, since);
-      res.json(stats);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get print stats for period" });
-    }
-  });
-
-  app.get("/api/printers/:id/stats/recent", async (req, res) => {
-    try {
-      const printerId = parseInt(req.params.id);
-      const limit = parseInt(req.query.limit as string) || 10;
-      const stats = await storage.getRecentPrintStats(printerId, limit);
-      res.json(stats);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get recent print stats" });
-    }
-  });
-
-  app.get("/api/printers/:id/stats/summary", async (req, res) => {
-    try {
-      const printerId = parseInt(req.params.id);
-      const now = new Date();
-      
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const yearStart = new Date(now.getFullYear(), 0, 1);
-      
-      const [today, week, month, year, allTime, recent] = await Promise.all([
-        storage.getPrintStatsByPeriod(printerId, todayStart),
-        storage.getPrintStatsByPeriod(printerId, weekStart),
-        storage.getPrintStatsByPeriod(printerId, monthStart),
-        storage.getPrintStatsByPeriod(printerId, yearStart),
-        storage.getPrintStatsTotals(printerId),
-        storage.getRecentPrintStats(printerId, 5),
-      ]);
-      
-      res.json({
-        today,
-        week,
-        month,
-        year,
-        allTime,
-        recentPrints: recent,
-      });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get print stats summary" });
-    }
-  });
-
-  // Smart plug discovery and management endpoints
-  app.get("/api/smart-plugs/discover", async (req, res) => {
-    try {
-      const { discoverAllDevices } = await import("./plugDiscovery");
-      const devices = await discoverAllDevices();
-      res.json({ success: true, devices });
-    } catch (error) {
-      console.error("Discovery error:", error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const errorStack = error instanceof Error ? error.stack : undefined;
-      res.status(500).json({ 
-        success: false,
-        error: "Failed to discover devices", 
-        details: errorMessage,
-        stack: errorStack,
-      });
-    }
-  });
-
-  app.get("/api/smart-plugs", async (req, res) => {
-    try {
-      const plugs = await storage.getSmartPlugs();
-      const safePlugs = plugs.map(plug => ({
-        id: plug.id,
-        name: plug.name,
-        type: plug.type,
-        ipAddress: plug.ipAddress,
-        port: plug.port,
-        deviceId: plug.deviceId,
-        isEnabled: plug.isEnabled,
-        createdAt: plug.createdAt,
-      }));
-      res.json(safePlugs);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get smart plugs" });
-    }
-  });
-
-  app.post("/api/smart-plugs", async (req, res) => {
-    try {
-      const { name, type, ipAddress, port, deviceId, credentials } = req.body;
-      
-      if (!name || !type || !ipAddress) {
-        return res.status(400).json({ error: "name, type, and ipAddress are required" });
-      }
-
-      const plug = await storage.addSmartPlug({
-        name,
-        type,
-        ipAddress,
-        port: port || null,
-        deviceId: deviceId || null,
-        credentials: credentials || null,
-        isEnabled: true,
-      });
-      
-      res.json({
-        id: plug.id,
-        name: plug.name,
-        type: plug.type,
-        ipAddress: plug.ipAddress,
-        port: plug.port,
-        deviceId: plug.deviceId,
-        isEnabled: plug.isEnabled,
-        createdAt: plug.createdAt,
-      });
-    } catch (error) {
-      console.error("Failed to add smart plug:", error);
-      res.status(500).json({ error: "Failed to add smart plug" });
-    }
-  });
-
-  app.put("/api/smart-plugs/:id", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const { name, credentials, isEnabled } = req.body;
-      
-      const updateData: Record<string, unknown> = {};
-      if (name !== undefined) updateData.name = name;
-      if (credentials !== undefined) updateData.credentials = credentials;
-      if (isEnabled !== undefined) updateData.isEnabled = isEnabled;
-      
-      const plug = await storage.updateSmartPlug(id, updateData);
-      if (!plug) {
-        return res.status(404).json({ error: "Smart plug not found" });
-      }
-      
-      res.json({
-        id: plug.id,
-        name: plug.name,
-        type: plug.type,
-        ipAddress: plug.ipAddress,
-        port: plug.port,
-        deviceId: plug.deviceId,
-        isEnabled: plug.isEnabled,
-        createdAt: plug.createdAt,
-      });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to update smart plug" });
-    }
-  });
-
-  app.delete("/api/smart-plugs/:id", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const deleted = await storage.deleteSmartPlug(id);
-      
-      if (!deleted) {
-        return res.status(404).json({ error: "Smart plug not found" });
-      }
-      
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete smart plug" });
-    }
-  });
-
-  app.post("/api/smart-plugs/:id/power", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const { turnOn } = req.body;
-      
-      const plug = await storage.getSmartPlug(id);
-      if (!plug) {
-        return res.status(404).json({ error: "Smart plug not found" });
-      }
-
-      if (plug.type === "homekit") {
-        res.json({ 
-          success: true, 
-          isOn: turnOn, 
-          message: `HomeKit plug "${plug.name}" - use Home app or Siri to control` 
-        });
-      } else {
-        res.status(400).json({ error: "Unknown plug type" });
-      }
-    } catch (error) {
-      console.error("Failed to control plug:", error);
-      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to control plug" });
-    }
-  });
-
-  app.get("/api/smart-plugs/:id/status", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      
-      const plug = await storage.getSmartPlug(id);
-      if (!plug) {
-        return res.status(404).json({ error: "Smart plug not found" });
-      }
-
-      if (plug.type === "homekit") {
-        try {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 3000);
-          
-          const response = await fetch(`http://${plug.ipAddress}:${plug.port || 80}/accessories`, {
-            signal: controller.signal,
-          });
-          clearTimeout(timeout);
-          
-          res.json({ isOn: false, reachable: response.ok });
-        } catch {
-          res.json({ isOn: false, reachable: false });
-        }
-      } else {
-        res.json({ isOn: false, reachable: false, error: "Unsupported plug type" });
-      }
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get plug status" });
     }
   });
 

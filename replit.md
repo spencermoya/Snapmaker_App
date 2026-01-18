@@ -61,7 +61,7 @@ shared/           # Shared code between frontend/backend
 - Direct HTTP communication with Snapmaker printers on port 8080
 - Endpoints for status polling, connection management, and control commands
 - Token-based authentication for printer connections
-- Auto-reconnect feature: Background poller continuously monitors printer availability. When a disconnected printer becomes reachable, automatically attempts reconnection using saved token - works even when app is closed
+- Auto-reconnect feature: When disconnected, monitors if printer comes online and attempts automatic reconnection using saved token
 - **File tracking workaround**: Snapmaker API doesn't support file listing. Users manually add filenames to track files uploaded via Luban. Files are stored in the `uploadedFiles` database table.
 - **Multiple file upload methods**:
   - Manual upload via file picker in FileList component
@@ -70,14 +70,7 @@ shared/           # Shared code between frontend/backend
   - Watch folder: Configure a local folder path in Settings; new G-code files are auto-imported (uses `server/fileWatcher.ts`)
   - Luban auto-capture: Proxy server intercepts Luban uploads, captures files automatically, and forwards to printer (uses `server/lubanProxy.ts`)
 - **Luban token capture**: When Luban connects through the proxy, the app captures and saves Luban's authentication token. This token is then used for prompt-free connections - no touchscreen confirmation needed after the first Luban connection.
-- Customizable dashboard: Users can toggle modules (status, webcam, temperature, jog controls, job controls, file list, stats) on/off via the customize panel
-- **Background polling**: Server-side polling service runs every 5 seconds to monitor connected printers (see `server/backgroundPoller.ts`)
-- **Real-time timer display**: Frontend uses client-side interpolation to update elapsed/remaining time every 500ms for smooth countdown display
-- **Print stats tracking**: Automatically detects print start/end events and records completed prints to database with duration and filename
-- **Stats dashboard**: View print statistics by period (Today/Week/Month/All Time) with total print time, print count, and recent print history
-- **Browser notifications**: Get real-time notifications when prints start or complete (uses SSE for active tabs)
-- **Web Push notifications**: Background push notifications that work even when the app is closed or phone is locked. Requires installing the PWA to home screen (iOS 16.4+). Uses VAPID keys stored in database.
-- **File list sorting**: Uploaded files are sorted with newest files at the top
+- Customizable dashboard: Users can toggle modules (status, webcam, temperature, jog controls, job controls, file list) on/off via the customize panel
 
 ### UI Libraries
 - **Radix UI**: Headless component primitives for accessibility
@@ -116,6 +109,27 @@ sudo -u postgres psql -c "CREATE DATABASE snapmaker OWNER snapmaker;"
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE snapmaker TO snapmaker;"
 ```
 
+### HTTPS Setup (Required for Safari/iOS)
+```bash
+# Generate self-signed SSL certificates (auto-detects Pi's IP)
+npm run generate-certs
+
+# Or specify a custom IP address:
+bash script/generate-certs.sh 192.168.1.100
+
+# This creates:
+#   certs/server.key
+#   certs/server.crt
+```
+
+Note: With self-signed certificates, browsers will show a security warning on first visit. Click "Advanced" → "Proceed" to trust it.
+
+If your Pi's IP address changes, regenerate certificates:
+```bash
+rm -rf certs/
+npm run generate-certs
+```
+
 ### Running the Application
 ```bash
 # Set environment variables
@@ -132,17 +146,8 @@ hostname -I
 ```
 
 Then access the dashboard at:
-- https://YOUR_PI_IP:5000 (with SSL certificates)
-- http://YOUR_PI_IP:5000 (without SSL certificates)
-
-### Installing SSL Certificate on iPhone
-If you're using HTTPS with a self-signed certificate, the Home Screen PWA won't work until you install and trust the certificate:
-
-1. Open Safari on your iPhone and go to: `https://YOUR_PI_IP:5000/install-cert`
-2. Tap "Download Certificate"
-3. Go to Settings → General → VPN & Device Management → tap the profile → Install
-4. Go to Settings → General → About → Certificate Trust Settings → enable the certificate
-5. Now you can add the app to your Home Screen and it will work
+- HTTPS: https://YOUR_PI_IP:5000 (if certs generated)
+- HTTP: http://YOUR_PI_IP:5000 (if no certs)
 
 ### Updating to Latest Version
 ```bash
@@ -198,36 +203,6 @@ sudo crontab -e
 ```
 
 This reboots the Pi at midnight, and the app will auto-start thanks to the systemd service.
-
-### AI Assistant Setup (Ollama)
-The app includes a built-in AI assistant that can help troubleshoot printer issues and modify the app's code. It runs locally using Ollama.
-
-```bash
-# Install Ollama on Raspberry Pi
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Start Ollama service
-sudo systemctl enable ollama
-sudo systemctl start ollama
-
-# Download a model (choose one based on your Pi's RAM)
-# For 4GB Pi: Use smaller models
-ollama pull tinyllama      # 1.1B params, ~637MB
-ollama pull phi            # 2.7B params, ~1.6GB
-
-# For 8GB Pi: Can use larger models
-ollama pull llama3.2       # 3B params, ~2GB
-ollama pull mistral        # 7B params, ~4GB
-```
-
-After installing, the AI chat button (robot icon) will appear in the bottom-right corner of the dashboard. The AI can:
-- Answer questions about 3D printing and the app
-- Read and suggest code changes
-- Commit changes to Git and push to GitHub
-- Restart the app after making changes
-
-**Configuring the AI:**
-Go to Settings page to change the Ollama URL (default: http://localhost:11434) and select your model.
 
 ### WiFi Auto-Reconnect
 To ensure your Pi always stays connected to WiFi (auto-reconnects if connection drops):
