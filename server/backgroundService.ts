@@ -4,7 +4,7 @@ import type { Printer, PrinterStatus } from "@shared/schema";
 const SNAPMAKER_PORT = 8080;
 const POLL_INTERVAL_CONNECTED = 5000;
 const POLL_INTERVAL_DISCONNECTED = 15000;
-const RECONNECT_COOLDOWN = 30000;
+const RECONNECT_COOLDOWN = 5000;
 
 interface PrinterState {
   printerId: number;
