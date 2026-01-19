@@ -339,8 +339,12 @@ export async function registerRoutes(
         lastSeen: new Date(),
       });
 
+      // Filter out HTTP status codes - only use string states like "idle", "running", "paused"
+      const rawState = statusData.status || statusData.state;
+      const state = (typeof rawState === 'string' && !/^\d+$/.test(rawState)) ? rawState : "idle";
+      
       const status: PrinterStatus = {
-        state: statusData.status || statusData.state || "idle",
+        state,
         temperature: {
           nozzle: statusData.temperature?.nozzle || 0,
           bed: statusData.temperature?.bed || 0,
