@@ -55,8 +55,11 @@ async function checkPrinterOnline(ipAddress: string): Promise<boolean> {
       method: "GET",
       signal: AbortSignal.timeout(2000),
     });
-    return response.ok || response.status === 401 || response.status === 403;
-  } catch {
+    const isOnline = response.ok || response.status === 401 || response.status === 403;
+    console.log(`[BackgroundService] Ping ${ipAddress}:${SNAPMAKER_PORT} -> ${response.status} (online: ${isOnline})`);
+    return isOnline;
+  } catch (error) {
+    console.log(`[BackgroundService] Ping ${ipAddress}:${SNAPMAKER_PORT} -> FAILED: ${error instanceof Error ? error.message : 'unknown error'}`);
     return false;
   }
 }
@@ -317,6 +320,7 @@ async function pollPrinter(printer: Printer): Promise<void> {
 async function pollAllPrinters(): Promise<void> {
   try {
     const printers = await storage.getAllPrinters();
+    console.log(`[BackgroundService] Polling ${printers.length} printer(s)...`);
     
     await Promise.all(printers.map(printer => pollPrinter(printer)));
   } catch (error) {
