@@ -253,15 +253,24 @@ async function pollPrinter(printer: Printer): Promise<void> {
   
   state.consecutiveFailures = 0;
   
-  if (!state.wasOnline && printer.token && printer.autoConnect !== false) {
-    const now = Date.now();
-    if (now - state.lastReconnectAttempt > RECONNECT_COOLDOWN) {
-      state.lastReconnectAttempt = now;
-      const reconnected = await attemptReconnect(printer);
-      if (reconnected) {
-        state.wasOnline = true;
+  if (!state.wasOnline) {
+    console.log(`[BackgroundService] ${printer.name} is reachable at ${printer.ipAddress}`);
+    
+    if (printer.token && printer.autoConnect !== false) {
+      const now = Date.now();
+      if (now - state.lastReconnectAttempt > RECONNECT_COOLDOWN) {
+        console.log(`[BackgroundService] Attempting auto-reconnect for ${printer.name} (has token, autoConnect=${printer.autoConnect})`);
+        state.lastReconnectAttempt = now;
+        const reconnected = await attemptReconnect(printer);
+        if (reconnected) {
+          state.wasOnline = true;
+          return;
+        }
+      } else {
+        console.log(`[BackgroundService] Cooldown active, skipping reconnect (${Math.round((RECONNECT_COOLDOWN - (now - state.lastReconnectAttempt)) / 1000)}s remaining)`);
       }
-      return;
+    } else if (!printer.token) {
+      console.log(`[BackgroundService] ${printer.name} has no saved token - manual connection required first`);
     }
   }
   
