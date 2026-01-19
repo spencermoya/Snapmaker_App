@@ -237,6 +237,8 @@ export async function registerRoutes(
       }
 
       const existingToken = printer.token || "";
+      console.log(`[Connect] Attempting to connect to ${printer.name} at ${printer.ipAddress}, existing token: ${existingToken ? 'yes' : 'no'}`);
+      
       const result = await snapmakerRequest(
         printer.ipAddress,
         "/api/v1/connect",
@@ -245,35 +247,66 @@ export async function registerRoutes(
         existingToken
       );
 
-      if (result.token) {
+      // Log response without exposing token
+      const logSafeResult = { ...result };
+      if (logSafeResult.token) logSafeResult.token = '[REDACTED]';
+      if (logSafeResult.data?.token) logSafeResult.data = { ...logSafeResult.data, token: '[REDACTED]' };
+      console.log(`[Connect] Response from printer:`, JSON.stringify(logSafeResult));
+
+      // Check for token in various possible locations in the response
+      const token = result.token || result.data?.token || result.result?.token;
+      
+      if (token) {
+        console.log(`[Connect] Token received, saving to database`);
         await storage.updatePrinter(printerId, {
-          token: result.token,
+          token: token,
           isConnected: true,
           lastSeen: new Date(),
         });
         return res.json({
           message: "Connected successfully",
           requiresConfirmation: false,
+          tokenSaved: true,
         });
       }
 
       if (result.status === 204) {
+        console.log(`[Connect] Waiting for touchscreen confirmation`);
         return res.json({
           message: "Please confirm connection on printer touchscreen, then click Connect again",
           requiresConfirmation: true,
         });
       }
 
+      // If we get here with status 200 but no token, the connection succeeded
+      // but the printer didn't give us a new token - try to use existing token
+      if (result.status === 200 && existingToken) {
+        console.log(`[Connect] Connected with existing token`);
+        await storage.updatePrinter(printerId, {
+          isConnected: true,
+          lastSeen: new Date(),
+        });
+        return res.json({
+          message: "Connected successfully with existing token",
+          requiresConfirmation: false,
+          tokenSaved: true,
+        });
+      }
+
+      // Connected but no token - this is a problem, warn the user
+      console.log(`[Connect] WARNING: Connected but no token received or saved!`);
       await storage.updatePrinter(printerId, {
         isConnected: true,
         lastSeen: new Date(),
       });
 
       res.json({
-        message: "Connected successfully",
+        message: "Connected, but no authentication token received. Auto-connect may not work.",
         requiresConfirmation: false,
+        tokenSaved: false,
       });
     } catch (error) {
+      console.error(`[Connect] Error:`, error);
       res.status(500).json({
         error: error instanceof Error ? error.message : "Failed to connect to printer",
       });
