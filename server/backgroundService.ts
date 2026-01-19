@@ -252,47 +252,59 @@ async function pollPrinter(printer: Printer): Promise<void> {
   }
   
   state.consecutiveFailures = 0;
-  
-  if (!state.wasOnline) {
-    console.log(`[BackgroundService] ${printer.name} is reachable at ${printer.ipAddress}`);
-    
-    if (printer.token && printer.autoConnect !== false) {
-      const now = Date.now();
-      if (now - state.lastReconnectAttempt > RECONNECT_COOLDOWN) {
-        console.log(`[BackgroundService] Attempting auto-reconnect for ${printer.name} (has token, autoConnect=${printer.autoConnect})`);
-        state.lastReconnectAttempt = now;
-        const reconnected = await attemptReconnect(printer);
-        if (reconnected) {
-          state.wasOnline = true;
-          return;
-        }
-      } else {
-        console.log(`[BackgroundService] Cooldown active, skipping reconnect (${Math.round((RECONNECT_COOLDOWN - (now - state.lastReconnectAttempt)) / 1000)}s remaining)`);
-      }
-    } else if (!printer.token) {
-      console.log(`[BackgroundService] ${printer.name} has no saved token - manual connection required first`);
-    }
-  }
-  
+  const wasOffline = !state.wasOnline;
   state.wasOnline = true;
   
-  if (!printer.token || !printer.isConnected) {
-    return;
+  if (wasOffline) {
+    console.log(`[BackgroundService] ${printer.name} is reachable at ${printer.ipAddress}`);
   }
   
-  const status = await getPrinterStatus(printer);
+  // Re-fetch printer data to get current isConnected state from database
+  const currentPrinter = await storage.getPrinter(printer.id);
+  if (!currentPrinter) return;
   
-  if (!status) {
-    if (printer.isConnected) {
-      await storage.updatePrinter(printer.id, { isConnected: false });
+  // If printer is online, has token, autoConnect enabled, but NOT connected - try to reconnect
+  if (currentPrinter.token && currentPrinter.autoConnect !== false && !currentPrinter.isConnected) {
+    const now = Date.now();
+    if (now - state.lastReconnectAttempt > RECONNECT_COOLDOWN) {
+      console.log(`[BackgroundService] Attempting auto-reconnect for ${currentPrinter.name} (has token, autoConnect=${currentPrinter.autoConnect}, isConnected=${currentPrinter.isConnected})`);
+      state.lastReconnectAttempt = now;
+      const reconnected = await attemptReconnect(currentPrinter);
+      if (reconnected) {
+        console.log(`[BackgroundService] Successfully auto-reconnected to ${currentPrinter.name}`);
+        return;
+      } else {
+        console.log(`[BackgroundService] Auto-reconnect failed for ${currentPrinter.name}, will retry in ${RECONNECT_COOLDOWN / 1000}s`);
+      }
     }
     return;
   }
   
-  await storage.updatePrinter(printer.id, { lastSeen: new Date() });
+  if (!currentPrinter.token) {
+    if (wasOffline) {
+      console.log(`[BackgroundService] ${currentPrinter.name} has no saved token - manual connection required first`);
+    }
+    return;
+  }
+  
+  if (!currentPrinter.isConnected) {
+    return;
+  }
+  
+  const status = await getPrinterStatus(currentPrinter);
+  
+  if (!status) {
+    if (currentPrinter.isConnected) {
+      console.log(`[BackgroundService] Lost connection to ${currentPrinter.name}, marking as disconnected`);
+      await storage.updatePrinter(currentPrinter.id, { isConnected: false });
+    }
+    return;
+  }
+  
+  await storage.updatePrinter(currentPrinter.id, { lastSeen: new Date() });
   
   if (status.state !== state.lastPrintState) {
-    await handlePrintStateChange(printer.id, state.lastPrintState, status.state, status);
+    await handlePrintStateChange(currentPrinter.id, state.lastPrintState, status.state, status);
   }
 }
 
