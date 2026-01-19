@@ -448,7 +448,7 @@ export default function Dashboard() {
   const { data: status } = useQuery<PrinterStatusType>({
     queryKey: [`/api/printers/${activePrinter?.id}/status`],
     enabled: !!activePrinter,
-    refetchInterval: 3000,
+    refetchInterval: 500,
   });
 
   const handleAddPrinter = useCallback((name: string, ip: string) => {
@@ -625,9 +625,14 @@ export default function Dashboard() {
                 <h1 className="text-3xl font-bold tracking-tight text-foreground flex items-center gap-3">
                   <span data-testid="text-printer-name">{selectedPrinter.name}</span>
                   {isConnected ? (
-                    <span className="text-xs font-mono font-normal border px-2 py-0.5 rounded-full text-muted-foreground">
-                      {status?.state || "idle"}
-                    </span>
+                    <button
+                      onClick={() => disconnectMutation.mutate(selectedPrinter.id)}
+                      disabled={disconnectMutation.isPending}
+                      className="text-xs font-mono font-normal border px-2 py-0.5 rounded-full text-green-500 border-green-500/50 hover:bg-green-500/20 hover:border-green-500 transition-colors cursor-pointer disabled:opacity-50"
+                      data-testid="button-disconnect"
+                    >
+                      {disconnectMutation.isPending ? "disconnecting..." : (status?.state && typeof status.state === 'string' && !['204', '200', '400', '401', '403'].includes(status.state) ? status.state : "connected")}
+                    </button>
                   ) : (
                     <button
                       onClick={() => connectMutation.mutate(selectedPrinter.id)}
