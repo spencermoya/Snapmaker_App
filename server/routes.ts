@@ -380,9 +380,9 @@ export async function registerRoutes(
         );
       }
 
+      // Only set isConnected to false - KEEP the token for auto-reconnect!
       await storage.updatePrinter(printerId, {
         isConnected: false,
-        token: null,
       });
 
       res.json({ message: "Disconnected successfully" });
