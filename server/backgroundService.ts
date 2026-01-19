@@ -73,8 +73,14 @@ async function getPrinterStatus(printer: Printer): Promise<PrinterStatus | null>
       printer.token
     );
 
+    const stateValue = typeof statusData.state === 'string' && statusData.state 
+      ? statusData.state 
+      : typeof statusData.status === 'string' && statusData.status 
+        ? statusData.status 
+        : "idle";
+    
     return {
-      state: statusData.status || statusData.state || "idle",
+      state: stateValue,
       temperature: {
         nozzle: statusData.temperature?.nozzle || 0,
         bed: statusData.temperature?.bed || 0,
@@ -104,7 +110,7 @@ async function attemptReconnect(printer: Printer): Promise<boolean> {
       printer.token
     );
 
-    if (result.token || result.status === 200) {
+    if (result.token || result.status === 200 || result.status === 204) {
       if (result.token) {
         await storage.updatePrinter(printer.id, {
           token: result.token,
