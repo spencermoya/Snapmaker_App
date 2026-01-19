@@ -55,7 +55,7 @@ async function checkPrinterOnline(ipAddress: string): Promise<boolean> {
       method: "GET",
       signal: AbortSignal.timeout(2000),
     });
-    const isOnline = response.ok || response.status === 401 || response.status === 403;
+    const isOnline = response.ok || response.status === 400 || response.status === 401 || response.status === 403;
     console.log(`[BackgroundService] Ping ${ipAddress}:${SNAPMAKER_PORT} -> ${response.status} (online: ${isOnline})`);
     return isOnline;
   } catch (error) {
