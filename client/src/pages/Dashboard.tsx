@@ -14,10 +14,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Power, Settings, Fan, Lightbulb, PauseCircle, StopCircle, Plus, RefreshCw, Wifi, WifiOff, Trash2, LayoutGrid, Upload } from "lucide-react";
+import { Power, Settings, Fan, Lightbulb, PauseCircle, StopCircle, Plus, RefreshCw, Wifi, WifiOff, Trash2, LayoutGrid, Upload, Bell, BellOff } from "lucide-react";
 import { toast } from "sonner";
 import type { Printer, PrinterStatus as PrinterStatusType } from "@shared/schema";
 import { DEFAULT_ENABLED_MODULES } from "@shared/schema";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 type ModuleConfig = {
   id: string;
@@ -124,6 +125,18 @@ export default function Dashboard() {
   const [dragCounter, setDragCounter] = useState(0);
   const [lightOn, setLightOn] = useState(false);
   const [fanOn, setFanOn] = useState(false);
+  
+  const { 
+    isSupported: pushSupported, 
+    isSubscribed: pushSubscribed, 
+    serverEnabled: pushServerEnabled,
+    subscribe: pushSubscribe, 
+    unsubscribe: pushUnsubscribe,
+    sendTest: pushTest,
+    isLoading: pushLoading,
+    isTestLoading: pushTestLoading,
+    permission: pushPermission,
+  } = usePushNotifications();
 
   const { data: printers = [], isLoading: printersLoading, isFetching: printersFetching, isSuccess: printersSuccess } = useQuery<Printer[]>({
     queryKey: ["/api/printers"],
@@ -685,28 +698,84 @@ export default function Dashboard() {
                     <SheetHeader>
                       <SheetTitle>Customize Dashboard</SheetTitle>
                     </SheetHeader>
-                    <div className="mt-6 space-y-4">
-                      <p className="text-sm text-muted-foreground">
-                        Toggle modules on or off to customize your dashboard view.
-                      </p>
-                      <div className="space-y-3">
-                        {MODULE_REGISTRY.map((module) => (
-                          <div
-                            key={module.id}
-                            className="flex items-center justify-between p-3 bg-secondary/20 rounded-lg"
-                          >
-                            <div>
-                              <p className="font-medium text-sm">{module.title}</p>
-                              <p className="text-xs text-muted-foreground capitalize">{module.column} column</p>
+                    <div className="mt-6 space-y-6">
+                      <div className="space-y-4">
+                        <p className="text-sm text-muted-foreground">
+                          Toggle modules on or off to customize your dashboard view.
+                        </p>
+                        <div className="space-y-3">
+                          {MODULE_REGISTRY.map((module) => (
+                            <div
+                              key={module.id}
+                              className="flex items-center justify-between p-3 bg-secondary/20 rounded-lg"
+                            >
+                              <div>
+                                <p className="font-medium text-sm">{module.title}</p>
+                                <p className="text-xs text-muted-foreground capitalize">{module.column} column</p>
+                              </div>
+                              <Switch
+                                checked={enabledModules.includes(module.id)}
+                                onCheckedChange={() => toggleModule(module.id)}
+                                disabled={updatePreferencesMutation.isPending}
+                                data-testid={`switch-module-${module.id}`}
+                              />
                             </div>
-                            <Switch
-                              checked={enabledModules.includes(module.id)}
-                              onCheckedChange={() => toggleModule(module.id)}
-                              disabled={updatePreferencesMutation.isPending}
-                              data-testid={`switch-module-${module.id}`}
-                            />
+                          ))}
+                        </div>
+                      </div>
+                      
+                      <Separator />
+                      
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2">
+                          <Bell className="h-4 w-4" />
+                          <h3 className="font-medium">Push Notifications</h3>
+                        </div>
+                        
+                        {!pushSupported ? (
+                          <p className="text-sm text-muted-foreground">
+                            Push notifications are not supported in this browser.
+                          </p>
+                        ) : !pushServerEnabled ? (
+                          <p className="text-sm text-muted-foreground">
+                            Push notifications are not configured on the server.
+                          </p>
+                        ) : (
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between p-3 bg-secondary/20 rounded-lg">
+                              <div>
+                                <p className="font-medium text-sm">Enable Notifications</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {pushSubscribed 
+                                    ? "Get alerts for print completion, errors, and connection status" 
+                                    : pushPermission === "denied" 
+                                      ? "Permission denied - check browser settings"
+                                      : "Receive alerts even when app is closed"}
+                                </p>
+                              </div>
+                              <Switch
+                                checked={pushSubscribed}
+                                onCheckedChange={() => pushSubscribed ? pushUnsubscribe() : pushSubscribe()}
+                                disabled={pushLoading || pushPermission === "denied"}
+                                data-testid="switch-push-notifications"
+                              />
+                            </div>
+                            
+                            {pushSubscribed && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full"
+                                onClick={() => pushTest()}
+                                disabled={pushTestLoading}
+                                data-testid="button-test-notification"
+                              >
+                                <Bell className="h-4 w-4 mr-2" />
+                                Send Test Notification
+                              </Button>
+                            )}
                           </div>
-                        ))}
+                        )}
                       </div>
                     </div>
                   </SheetContent>

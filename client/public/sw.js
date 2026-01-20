@@ -1,4 +1,4 @@
-const CACHE_NAME = 'snapmaker-control-v1';
+const CACHE_NAME = 'snapmaker-control-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
@@ -63,5 +63,53 @@ self.addEventListener('fetch', (event) => {
           }
         });
       })
+  );
+});
+
+self.addEventListener('push', (event) => {
+  if (!event.data) {
+    console.log('[SW] Push event but no data');
+    return;
+  }
+
+  let payload;
+  try {
+    payload = event.data.json();
+  } catch (e) {
+    payload = {
+      title: 'Snapmaker Control',
+      body: event.data.text(),
+    };
+  }
+
+  const options = {
+    body: payload.body || '',
+    icon: payload.icon || '/icon-192.png',
+    badge: payload.badge || '/icon-192.png',
+    tag: payload.tag || 'default',
+    data: payload.data || {},
+    vibrate: [200, 100, 200],
+    requireInteraction: true,
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(payload.title || 'Snapmaker Control', options)
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow('/');
+      }
+    })
   );
 });

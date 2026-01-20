@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import type { Printer, PrinterStatus } from "@shared/schema";
+import { notifyPrintComplete, notifyPrinterDisconnected, notifyPrinterOnline, isPushEnabled } from "./pushService";
 
 const SNAPMAKER_PORT = 8080;
 const POLL_INTERVAL_CONNECTED = 5000;
@@ -231,6 +232,12 @@ async function handlePrintStateChange(
           lastPrintFilename: state.currentFilename,
           lastPrintCompletedAt: new Date(),
         });
+        
+        if (isPushEnabled()) {
+          notifyPrintComplete(state.currentFilename).catch(err => 
+            console.log(`[BackgroundService] Failed to send print complete notification:`, err)
+          );
+        }
       }
       
       console.log(`[BackgroundService] Stats updated: +1 print, +${printDuration}s print time, +${filamentUsed.toFixed(2)}g filament`);
@@ -254,6 +261,12 @@ async function pollPrinter(printer: Printer): Promise<void> {
     if (state.wasOnline && printer.isConnected) {
       console.log(`[BackgroundService] ${printer.name} went offline`);
       await storage.updatePrinter(printer.id, { isConnected: false });
+      
+      if (isPushEnabled()) {
+        notifyPrinterDisconnected(printer.name).catch(err => 
+          console.log(`[BackgroundService] Failed to send disconnect notification:`, err)
+        );
+      }
     }
     
     state.wasOnline = false;
@@ -281,6 +294,12 @@ async function pollPrinter(printer: Printer): Promise<void> {
       const reconnected = await attemptReconnect(currentPrinter);
       if (reconnected) {
         console.log(`[BackgroundService] Successfully auto-reconnected to ${currentPrinter.name}`);
+        
+        if (isPushEnabled()) {
+          notifyPrinterOnline(currentPrinter.name).catch(err => 
+            console.log(`[BackgroundService] Failed to send online notification:`, err)
+          );
+        }
         return;
       } else {
         console.log(`[BackgroundService] Auto-reconnect failed for ${currentPrinter.name}, will retry in ${RECONNECT_COOLDOWN / 1000}s`);

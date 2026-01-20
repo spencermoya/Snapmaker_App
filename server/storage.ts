@@ -1,4 +1,4 @@
-import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, type SmartPlug, type InsertSmartPlug, type PrinterStats, printers, printJobs, dashboardPreferences, uploadedFiles, appSettings, smartPlugs, printerStats, DEFAULT_ENABLED_MODULES } from "@shared/schema";
+import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, type SmartPlug, type InsertSmartPlug, type PrinterStats, type PushSubscription, printers, printJobs, dashboardPreferences, uploadedFiles, appSettings, smartPlugs, printerStats, pushSubscriptions, DEFAULT_ENABLED_MODULES } from "@shared/schema";
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 
@@ -28,6 +28,9 @@ export interface IStorage {
   incrementPrintCount(printerId: number): Promise<void>;
   addPrintTime(printerId: number, seconds: number): Promise<void>;
   addFilamentUsed(printerId: number, grams: number): Promise<void>;
+  getAllPushSubscriptions(): Promise<PushSubscription[]>;
+  addPushSubscription(endpoint: string, p256dh: string, auth: string): Promise<PushSubscription>;
+  deletePushSubscription(endpoint: string): Promise<boolean>;
 }
 
 export class DbStorage implements IStorage {
@@ -232,6 +235,28 @@ export class DbStorage implements IStorage {
         })
         .where(eq(printerStats.printerId, printerId));
     }
+  }
+
+  async getAllPushSubscriptions(): Promise<PushSubscription[]> {
+    return await db.select().from(pushSubscriptions);
+  }
+
+  async addPushSubscription(endpoint: string, p256dh: string, auth: string): Promise<PushSubscription> {
+    const existing = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint)).limit(1);
+    if (existing[0]) {
+      const result = await db.update(pushSubscriptions)
+        .set({ p256dh, auth })
+        .where(eq(pushSubscriptions.endpoint, endpoint))
+        .returning();
+      return result[0]!;
+    }
+    const result = await db.insert(pushSubscriptions).values({ endpoint, p256dh, auth }).returning();
+    return result[0]!;
+  }
+
+  async deletePushSubscription(endpoint: string): Promise<boolean> {
+    const result = await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint)).returning();
+    return result.length > 0;
   }
 }
 

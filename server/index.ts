@@ -7,6 +7,7 @@ import { readFileSync, existsSync } from "fs";
 import path from "path";
 import { ensureSchema } from "./ensureSchema";
 import { startBackgroundService } from "./backgroundService";
+import { initPushService } from "./pushService";
 
 const app = express();
 
@@ -234,6 +235,10 @@ app.use((req, res, next) => {
       
       startBackgroundService();
       log("Background connection service started");
+      
+      if (initPushService()) {
+        log("Push notification service initialized");
+      }
     },
   );
 })();

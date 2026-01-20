@@ -7,6 +7,7 @@ import { storage } from "./storage";
 import { startWatcher, stopWatcher, getWatcherStatus, initializeWatcher } from "./fileWatcher";
 import { startLubanProxy, stopLubanProxy, getLubanProxyStatus, initializeLubanProxy } from "./lubanProxy";
 import { extractThumbnail } from "./thumbnailExtractor";
+import { getVapidPublicKey, isPushEnabled } from "./pushService";
 import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } from "@shared/schema";
 import { z } from "zod";
 
@@ -1235,6 +1236,71 @@ export async function registerRoutes(
       res.json({ success: true, autoConnect: enabled });
     } catch (error) {
       res.status(500).json({ error: "Failed to update auto-connect setting" });
+    }
+  });
+
+  // Push notification endpoints
+  app.get("/api/push/vapid-public-key", (req, res) => {
+    const key = getVapidPublicKey();
+    if (!key) {
+      return res.status(503).json({ error: "Push notifications not configured" });
+    }
+    res.json({ publicKey: key });
+  });
+
+  app.get("/api/push/status", (req, res) => {
+    res.json({ 
+      enabled: isPushEnabled(),
+      publicKey: getVapidPublicKey() 
+    });
+  });
+
+  app.post("/api/push/subscribe", async (req, res) => {
+    try {
+      const { endpoint, keys } = req.body;
+      
+      if (!endpoint || !keys?.p256dh || !keys?.auth) {
+        return res.status(400).json({ error: "Invalid subscription data" });
+      }
+
+      const subscription = await storage.addPushSubscription(endpoint, keys.p256dh, keys.auth);
+      console.log(`[Push] New subscription registered: ${endpoint.substring(0, 50)}...`);
+      res.json({ success: true, id: subscription.id });
+    } catch (error) {
+      console.error("[Push] Subscribe error:", error);
+      res.status(500).json({ error: "Failed to save subscription" });
+    }
+  });
+
+  app.post("/api/push/unsubscribe", async (req, res) => {
+    try {
+      const { endpoint } = req.body;
+      
+      if (!endpoint) {
+        return res.status(400).json({ error: "Missing endpoint" });
+      }
+
+      const deleted = await storage.deletePushSubscription(endpoint);
+      console.log(`[Push] Subscription removed: ${endpoint.substring(0, 50)}...`);
+      res.json({ success: deleted });
+    } catch (error) {
+      console.error("[Push] Unsubscribe error:", error);
+      res.status(500).json({ error: "Failed to remove subscription" });
+    }
+  });
+
+  app.post("/api/push/test", async (req, res) => {
+    try {
+      const { sendPushNotification } = await import("./pushService");
+      const result = await sendPushNotification({
+        title: "Test Notification",
+        body: "Push notifications are working!",
+        tag: "test",
+      });
+      res.json({ sent: result.success, failed: result.failed });
+    } catch (error) {
+      console.error("[Push] Test notification error:", error);
+      res.status(500).json({ error: "Failed to send test notification" });
     }
   });
 
