@@ -43,3 +43,10 @@ waitForPort = 5000
 [agent]
 mockupState = "FULLSTACK"
 expertMode = true
+
+[userenv]
+
+[userenv.shared]
+VAPID_PUBLIC_KEY = "BHZ_yek_J4XkqD6tiQYAgzHl0NmdgJJxbvcnG2OGo-YFd12KB9UbnbTRRvq7L1jAOTUTOy8Q5lrKp9PUqzIw-2c"
+VAPID_PRIVATE_KEY = "pEGxxwvGpMFUUFNLypHrxqYMEVHCg9f0IPuXIVWnmNA"
+VAPID_EMAIL = "mailto:admin@snapmaker.local"
