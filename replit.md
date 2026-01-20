@@ -78,6 +78,12 @@ shared/           # Shared code between frontend/backend
   - Luban auto-capture: Proxy server intercepts Luban uploads, captures files automatically, and forwards to printer (uses `server/lubanProxy.ts`)
 - **Luban token capture**: When Luban connects through the proxy, the app captures and saves Luban's authentication token. This token is then used for prompt-free connections - no touchscreen confirmation needed after the first Luban connection.
 - Customizable dashboard: Users can toggle modules (status, webcam, temperature, stats, jog controls, job controls, file list) on/off via the customize panel
+- **Push notifications**: Web Push API integration for alerts when app is closed
+  - Requires VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_EMAIL environment variables
+  - Notifications sent for: print completed, printer disconnected, printer back online
+  - Uses `server/pushService.ts` for sending notifications and `push_subscriptions` database table
+  - Service worker handles push events in `client/public/sw.js`
+  - iOS PWA requirements: iOS 16.4+, HTTPS, app installed to home screen, user permission granted
 
 ### UI Libraries
 - **Radix UI**: Headless component primitives for accessibility
