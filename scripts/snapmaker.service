@@ -11,8 +11,8 @@ Restart=on-failure
 RestartSec=10
 Environment=NODE_ENV=production
 Environment=DATABASE_URL=postgresql://snapmaker:Server1@127.0.0.1:5432/snapmaker
-Environment=VAPID_PUBLIC_KEY=BN5B69lJPFMIvwnQDbI-mhqIuEVPrRFJ0h1GHsQoHSgsaAnlgZ2oBN81dV9q1ZyeHUMMvH2bGfkMQKINx7RLwO4
-Environment=VAPID_PRIVATE_KEY=iLYvgvZVEpDeOgSP8zSoXKCoy-6xQAoCKSXFwCOXhUk
+Environment=VAPID_PUBLIC_KEY=BAb4_VxpEJTeCBOHbSCaJY967zjqT6myf0BmxVcIWb6q3v7skYIahmc3lZDKW-vHkSjaUipD5cdn54_8tx3vMXk
+Environment=VAPID_PRIVATE_KEY=9JggAN5StUumyH8vtWLx5f7EyE0aCnqOBZ35et1geIY
 Environment=VAPID_EMAIL=mailto:spencermoya@icloud.com
 
 [Install]
