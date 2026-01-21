@@ -75,6 +75,12 @@ export async function sendPushNotification(payload: NotificationPayload): Promis
     } catch (error: any) {
       failed++;
       console.error(`[PushService] Failed to send to ${sub.endpoint.substring(0, 50)}...:`, error.message);
+      console.error(`[PushService] Error details - statusCode: ${error.statusCode}, body: ${error.body}`);
+      
+      if (error.statusCode === 401 || error.statusCode === 403) {
+        console.error("[PushService] VAPID authentication failed - keys may be mismatched");
+        console.error("[PushService] Try: 1) Regenerate VAPID keys, 2) Rebuild app, 3) Clear subscriptions, 4) Re-subscribe");
+      }
       
       if (error.statusCode === 404 || error.statusCode === 410) {
         console.log("[PushService] Subscription expired, removing");

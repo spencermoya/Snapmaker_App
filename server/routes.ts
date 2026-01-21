@@ -1265,10 +1265,33 @@ export async function registerRoutes(
 
       const subscription = await storage.addPushSubscription(endpoint, keys.p256dh, keys.auth);
       console.log(`[Push] New subscription registered: ${endpoint.substring(0, 50)}...`);
+      console.log(`[Push] Subscription keys - p256dh length: ${keys.p256dh.length}, auth length: ${keys.auth.length}`);
       res.json({ success: true, id: subscription.id });
     } catch (error) {
       console.error("[Push] Subscribe error:", error);
       res.status(500).json({ error: "Failed to save subscription" });
+    }
+  });
+
+  app.get("/api/push/debug", async (req, res) => {
+    try {
+      const subscriptions = await storage.getAllPushSubscriptions();
+      const { getVapidPublicKey, isPushEnabled } = await import("./pushService");
+      res.json({
+        enabled: isPushEnabled(),
+        publicKey: getVapidPublicKey(),
+        subscriptionCount: subscriptions.length,
+        subscriptions: subscriptions.map(s => ({
+          id: s.id,
+          endpoint: s.endpoint.substring(0, 60) + "...",
+          p256dhLength: s.p256dh.length,
+          authLength: s.auth.length,
+          createdAt: s.createdAt
+        }))
+      });
+    } catch (error) {
+      console.error("[Push] Debug error:", error);
+      res.status(500).json({ error: "Debug failed" });
     }
   });
 

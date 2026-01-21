@@ -164,8 +164,10 @@ export default function Settings() {
       const data = await response.json();
       if (data.sent > 0) {
         toast.success("Test notification sent!");
+      } else if (data.failed > 0) {
+        toast.error("Notification failed to deliver - check server logs");
       } else {
-        toast.error("No subscriptions found");
+        toast.error("No subscriptions found - try toggling notifications off and on");
       }
     } catch (error) {
       console.error("Push test error:", error);
