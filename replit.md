@@ -152,6 +152,43 @@ rm -rf certs/
 npm run generate-certs
 ```
 
+### Push Notifications Setup (iOS/Safari)
+Push notifications require VAPID keys. Generate your own keys:
+```bash
+npx web-push generate-vapid-keys
+```
+
+Then edit the systemd service file to add your keys:
+```bash
+sudo nano /etc/systemd/system/snapmaker.service
+```
+
+Add these lines in the `[Service]` section (replace with your actual keys):
+```
+Environment=VAPID_PUBLIC_KEY=your_public_key_here
+Environment=VAPID_PRIVATE_KEY=your_private_key_here
+Environment=VAPID_EMAIL=mailto:your-email@example.com
+```
+
+Or if running manually:
+```bash
+export VAPID_PUBLIC_KEY="your_public_key_here"
+export VAPID_PRIVATE_KEY="your_private_key_here"
+export VAPID_EMAIL="mailto:your-email@example.com"
+```
+
+After updating the service file:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart snapmaker
+```
+
+**iOS PWA Requirements for Push:**
+- iOS 16.4 or later
+- HTTPS enabled (certificates installed)
+- App added to Home Screen (not just browser bookmark)
+- User must grant notification permission when prompted
+
 ### Running the Application
 ```bash
 # Set environment variables

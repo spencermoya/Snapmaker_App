@@ -12,5 +12,11 @@ RestartSec=10
 Environment=NODE_ENV=production
 Environment=DATABASE_URL=postgresql://snapmaker:Server1@127.0.0.1:5432/snapmaker
 
+# Push Notification VAPID keys (required for iOS/Safari push notifications)
+# Generate your own keys with: npx web-push generate-vapid-keys
+Environment=VAPID_PUBLIC_KEY=YOUR_VAPID_PUBLIC_KEY_HERE
+Environment=VAPID_PRIVATE_KEY=YOUR_VAPID_PRIVATE_KEY_HERE
+Environment=VAPID_EMAIL=mailto:your-email@example.com
+
 [Install]
 WantedBy=multi-user.target
