@@ -135,6 +135,14 @@ const REQUIRED_COLUMNS = [
   },
 ];
 
+const COLUMNS_TO_DROP = [
+  {
+    table: "push_subscriptions",
+    column: "printer_id",
+    dropSQL: "ALTER TABLE push_subscriptions DROP COLUMN IF EXISTS printer_id",
+  },
+];
+
 export async function ensureSchema(): Promise<void> {
   const client = await pool.connect();
   
@@ -177,6 +185,29 @@ export async function ensureSchema(): Promise<void> {
         }
       } catch (error) {
         log(`[Schema] Warning adding column ${col.table}.${col.column}: ${error}`, "db");
+      }
+    }
+    
+    for (const col of COLUMNS_TO_DROP) {
+      try {
+        const result = await client.query(`
+          SELECT EXISTS (
+            SELECT FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = $1
+            AND column_name = $2
+          )
+        `, [col.table, col.column]);
+        
+        const exists = result.rows[0]?.exists;
+        
+        if (exists) {
+          log(`[Schema] Dropping deprecated column: ${col.table}.${col.column}`, "db");
+          await client.query(col.dropSQL);
+          log(`[Schema] Dropped column: ${col.table}.${col.column}`, "db");
+        }
+      } catch (error) {
+        log(`[Schema] Warning dropping column ${col.table}.${col.column}: ${error}`, "db");
       }
     }
     
