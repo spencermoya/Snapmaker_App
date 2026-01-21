@@ -694,11 +694,14 @@ export default function Dashboard() {
                       <LayoutGrid className="h-4 w-4" />
                     </Button>
                   </SheetTrigger>
-                  <SheetContent className="flex flex-col h-[85vh] overflow-hidden">
+                  <SheetContent className="flex flex-col h-[85dvh] overflow-hidden">
                     <SheetHeader className="flex-shrink-0">
                       <SheetTitle>Customize Dashboard</SheetTitle>
                     </SheetHeader>
-                    <div className="mt-6 space-y-6 flex-1 overflow-y-auto pb-8 -mr-6 pr-6">
+                    <div 
+                      className="mt-6 space-y-6 flex-1 overflow-y-auto overscroll-contain pb-8 -mr-6 pr-6"
+                      style={{ WebkitOverflowScrolling: 'touch' }}
+                    >
                       <div className="space-y-4">
                         <p className="text-sm text-muted-foreground">
                           Toggle modules on or off to customize your dashboard view.
