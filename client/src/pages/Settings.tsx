@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Plus, Trash2, Wifi, WifiOff, ArrowLeft, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio } from "lucide-react";
+import { Plus, Trash2, Wifi, WifiOff, ArrowLeft, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Bell } from "lucide-react";
 import { useLocation } from "wouter";
 import type { Printer } from "@shared/schema";
 
@@ -28,6 +29,11 @@ interface SettingsData {
   };
 }
 
+interface PushStatus {
+  enabled: boolean;
+  publicKey: string | null;
+}
+
 export default function Settings() {
   const [, setLocation] = useLocation();
   const [newPrinterName, setNewPrinterName] = useState("");
@@ -36,6 +42,138 @@ export default function Settings() {
   const [lubanProxyIp, setLubanProxyIp] = useState("");
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const queryClient = useQueryClient();
+
+  const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [pushSupported, setPushSupported] = useState(false);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission>("default");
+  const [pushLoading, setPushLoading] = useState(false);
+  const [pushTestLoading, setPushTestLoading] = useState(false);
+
+  const { data: pushStatus } = useQuery<PushStatus>({
+    queryKey: ["/api/push/status"],
+    staleTime: Infinity,
+  });
+
+  const checkPushSubscription = useCallback(async () => {
+    try {
+      if ("serviceWorker" in navigator && "PushManager" in window) {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        setPushSubscribed(!!subscription);
+      }
+    } catch (error) {
+      console.error("Error checking push subscription:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+    setPushSupported(supported);
+    if (supported) {
+      setPushPermission(Notification.permission);
+      checkPushSubscription();
+    }
+  }, [checkPushSubscription]);
+
+  const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
+
+  const handlePushSubscribe = async () => {
+    if (!pushStatus?.publicKey) {
+      toast.error("Push notifications not configured on server");
+      return;
+    }
+    setPushLoading(true);
+    try {
+      const perm = await Notification.requestPermission();
+      setPushPermission(perm);
+      if (perm !== "granted") {
+        toast.error("Notification permission denied");
+        return;
+      }
+      const registration = await navigator.serviceWorker.ready;
+      const existingSub = await registration.pushManager.getSubscription();
+      if (existingSub) {
+        await existingSub.unsubscribe();
+      }
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(pushStatus.publicKey),
+      });
+      const response = await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(subscription.toJSON()),
+      });
+      if (!response.ok) {
+        throw new Error("Failed to save subscription");
+      }
+      await checkPushSubscription();
+      toast.success("Push notifications enabled!");
+    } catch (error) {
+      console.error("Push subscribe error:", error);
+      toast.error("Failed to enable notifications");
+      await checkPushSubscription();
+    } finally {
+      setPushLoading(false);
+    }
+  };
+
+  const handlePushUnsubscribe = async () => {
+    setPushLoading(true);
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        await fetch("/api/push/unsubscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: subscription.endpoint }),
+        });
+        await subscription.unsubscribe();
+      }
+      await checkPushSubscription();
+      toast.success("Push notifications disabled");
+    } catch (error) {
+      console.error("Push unsubscribe error:", error);
+      toast.error("Failed to disable notifications");
+      await checkPushSubscription();
+    } finally {
+      setPushLoading(false);
+    }
+  };
+
+  const handlePushTest = async () => {
+    setPushTestLoading(true);
+    try {
+      const response = await fetch("/api/push/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!response.ok) {
+        throw new Error("Failed to send test notification");
+      }
+      const data = await response.json();
+      if (data.sent > 0) {
+        toast.success("Test notification sent!");
+      } else {
+        toast.error("No subscriptions found");
+      }
+    } catch (error) {
+      console.error("Push test error:", error);
+      toast.error("Failed to send test notification");
+    } finally {
+      setPushTestLoading(false);
+    }
+  };
 
   const { data: printers = [], isLoading } = useQuery<Printer[]>({
     queryKey: ["/api/printers"],
@@ -587,6 +725,77 @@ export default function Settings() {
                   This feature only works when running on a Raspberry Pi or computer on the same network as your printer. 
                   It won't work from cloud-hosted environments.
                 </p>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-6 bg-secondary/20 border-border">
+          <div className="flex items-center gap-2 mb-4">
+            <Bell className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold">Push Notifications</h2>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            Get alerts when prints complete, when the printer disconnects, or comes back online - 
+            even when the app is closed or your phone is locked.
+          </p>
+          
+          {!pushSupported ? (
+            <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+              <p className="text-sm text-yellow-400">
+                Push notifications are not supported in this browser. 
+                For iOS, add the app to your Home Screen first.
+              </p>
+            </div>
+          ) : !pushStatus?.enabled ? (
+            <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+              <p className="text-sm text-yellow-400">
+                Push notifications are not configured on the server. 
+                VAPID keys need to be set in environment variables.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
+                <div>
+                  <p className="font-medium text-sm">Enable Notifications</p>
+                  <p className="text-xs text-muted-foreground">
+                    {pushSubscribed 
+                      ? "You will receive alerts for print events" 
+                      : pushPermission === "denied" 
+                        ? "Permission denied - check browser settings"
+                        : "Receive alerts even when app is closed"}
+                  </p>
+                </div>
+                <Switch
+                  checked={pushSubscribed}
+                  onCheckedChange={() => pushSubscribed ? handlePushUnsubscribe() : handlePushSubscribe()}
+                  disabled={pushLoading || pushPermission === "denied"}
+                  data-testid="switch-push-notifications"
+                />
+              </div>
+              
+              {pushSubscribed && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={handlePushTest}
+                  disabled={pushTestLoading}
+                  data-testid="button-test-notification"
+                >
+                  <Bell className="h-4 w-4 mr-2" />
+                  Send Test Notification
+                </Button>
+              )}
+              
+              <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                <h3 className="font-medium text-sm mb-2 text-blue-400">Requirements for iOS</h3>
+                <ul className="text-xs text-muted-foreground space-y-1">
+                  <li>iOS 16.4 or later</li>
+                  <li>HTTPS enabled (certificates installed)</li>
+                  <li>App added to Home Screen (not just browser)</li>
+                  <li>Notification permission granted</li>
+                </ul>
               </div>
             </div>
           )}
