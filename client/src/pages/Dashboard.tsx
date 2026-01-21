@@ -694,41 +694,11 @@ export default function Dashboard() {
                       <LayoutGrid className="h-4 w-4" />
                     </Button>
                   </SheetTrigger>
-                  <SheetContent className="flex flex-col h-[85dvh] overflow-hidden">
-                    <SheetHeader className="flex-shrink-0">
+                  <SheetContent>
+                    <SheetHeader>
                       <SheetTitle>Customize Dashboard</SheetTitle>
                     </SheetHeader>
-                    <div 
-                      className="mt-6 space-y-6 flex-1 overflow-y-auto overscroll-contain pb-8 -mr-6 pr-6"
-                      style={{ WebkitOverflowScrolling: 'touch' }}
-                    >
-                      <div className="space-y-4">
-                        <p className="text-sm text-muted-foreground">
-                          Toggle modules on or off to customize your dashboard view.
-                        </p>
-                        <div className="space-y-3">
-                          {MODULE_REGISTRY.map((module) => (
-                            <div
-                              key={module.id}
-                              className="flex items-center justify-between p-3 bg-secondary/20 rounded-lg"
-                            >
-                              <div>
-                                <p className="font-medium text-sm">{module.title}</p>
-                                <p className="text-xs text-muted-foreground capitalize">{module.column} column</p>
-                              </div>
-                              <Switch
-                                checked={enabledModules.includes(module.id)}
-                                onCheckedChange={() => toggleModule(module.id)}
-                                disabled={updatePreferencesMutation.isPending}
-                                data-testid={`switch-module-${module.id}`}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      
-                      <Separator />
-                      
+                    <div className="mt-6 space-y-6">
                       <div className="space-y-4">
                         <div className="flex items-center gap-2">
                           <Bell className="h-4 w-4" />
@@ -779,6 +749,33 @@ export default function Dashboard() {
                             )}
                           </div>
                         )}
+                      </div>
+                      
+                      <Separator />
+                      
+                      <div className="space-y-4">
+                        <p className="text-sm text-muted-foreground">
+                          Toggle modules on or off to customize your dashboard view.
+                        </p>
+                        <div className="space-y-3">
+                          {MODULE_REGISTRY.map((module) => (
+                            <div
+                              key={module.id}
+                              className="flex items-center justify-between p-3 bg-secondary/20 rounded-lg"
+                            >
+                              <div>
+                                <p className="font-medium text-sm">{module.title}</p>
+                                <p className="text-xs text-muted-foreground capitalize">{module.column} column</p>
+                              </div>
+                              <Switch
+                                checked={enabledModules.includes(module.id)}
+                                onCheckedChange={() => toggleModule(module.id)}
+                                disabled={updatePreferencesMutation.isPending}
+                                data-testid={`switch-module-${module.id}`}
+                              />
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </SheetContent>
