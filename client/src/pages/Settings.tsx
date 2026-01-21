@@ -100,10 +100,21 @@ export default function Settings() {
         return;
       }
       const registration = await navigator.serviceWorker.ready;
+      
       const existingSub = await registration.pushManager.getSubscription();
       if (existingSub) {
+        try {
+          await fetch("/api/push/unsubscribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ endpoint: existingSub.endpoint }),
+          });
+        } catch (e) {
+          console.log("Old subscription cleanup failed, continuing...");
+        }
         await existingSub.unsubscribe();
       }
+      
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(pushStatus.publicKey),
