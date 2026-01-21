@@ -694,11 +694,11 @@ export default function Dashboard() {
                       <LayoutGrid className="h-4 w-4" />
                     </Button>
                   </SheetTrigger>
-                  <SheetContent>
-                    <SheetHeader>
+                  <SheetContent className="flex flex-col max-h-[90vh]">
+                    <SheetHeader className="flex-shrink-0">
                       <SheetTitle>Customize Dashboard</SheetTitle>
                     </SheetHeader>
-                    <div className="mt-6 space-y-6">
+                    <div className="mt-6 space-y-6 flex-1 overflow-y-auto pb-6">
                       <div className="space-y-4">
                         <div className="flex items-center gap-2">
                           <Bell className="h-4 w-4" />
