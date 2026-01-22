@@ -58,6 +58,7 @@ export default function Settings() {
   const [pushTestLoading, setPushTestLoading] = useState(false);
 
   const [cameraUrl, setCameraUrl] = useState("");
+  const [cameraRtspUrl, setCameraRtspUrl] = useState("");
   const [cameraIp, setCameraIp] = useState("");
   const [cameraUsername, setCameraUsername] = useState("");
   const [cameraPassword, setCameraPassword] = useState("");
@@ -65,6 +66,7 @@ export default function Settings() {
   const [cameraDetecting, setCameraDetecting] = useState(false);
   const [cameraDetectedBrand, setCameraDetectedBrand] = useState<string | null>(null);
   const [showAdvancedCamera, setShowAdvancedCamera] = useState(false);
+  const [cameraMode, setCameraMode] = useState<"snapshot" | "rtsp">("snapshot");
 
   const { data: pushStatus } = useQuery<PushStatus>({
     queryKey: ["/api/push/status"],
@@ -79,9 +81,16 @@ export default function Settings() {
   useEffect(() => {
     if (cameraSettings) {
       setCameraUrl(cameraSettings.url || "");
+      setCameraRtspUrl((cameraSettings as any).rtspUrl || "");
       setCameraUsername(cameraSettings.username || "");
       setCameraPassword(cameraSettings.password === "***" ? "" : (cameraSettings.password || ""));
       setCameraRefreshRate(cameraSettings.refreshRate || 1000);
+      // Set camera mode based on what's configured
+      if ((cameraSettings as any).rtspUrl) {
+        setCameraMode("rtsp");
+      } else if (cameraSettings.url) {
+        setCameraMode("snapshot");
+      }
       // Extract IP from existing URL if present
       if (cameraSettings.url) {
         try {
@@ -95,7 +104,7 @@ export default function Settings() {
   }, [cameraSettings]);
 
   const cameraMutation = useMutation({
-    mutationFn: async (data: { url: string; username: string; password: string; refreshRate: number; clearPassword?: boolean }) => {
+    mutationFn: async (data: { url: string; rtspUrl?: string; username: string; password: string; refreshRate: number; clearPassword?: boolean }) => {
       const response = await fetch("/api/settings/camera", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -106,6 +115,7 @@ export default function Settings() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/settings/camera"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stream/status"] });
       toast.success("Camera settings saved");
     },
     onError: () => {
@@ -115,7 +125,22 @@ export default function Settings() {
 
   const handleSaveCameraSettings = () => {
     cameraMutation.mutate({
-      url: cameraUrl || "",
+      url: cameraMode === "snapshot" ? cameraUrl : "",
+      rtspUrl: cameraMode === "rtsp" ? cameraRtspUrl : "",
+      username: cameraUsername,
+      password: cameraPassword,
+      refreshRate: cameraRefreshRate,
+    });
+  };
+
+  const handleSaveRtspSettings = () => {
+    if (!cameraRtspUrl) {
+      toast.error("Please enter an RTSP URL");
+      return;
+    }
+    cameraMutation.mutate({
+      url: "",
+      rtspUrl: cameraRtspUrl,
       username: cameraUsername,
       password: cameraPassword,
       refreshRate: cameraRefreshRate,
@@ -125,17 +150,20 @@ export default function Settings() {
   const handleClearCamera = () => {
     cameraMutation.mutate({
       url: "",
+      rtspUrl: "",
       username: "",
       password: "",
       refreshRate: 1000,
       clearPassword: true,
     });
     setCameraUrl("");
+    setCameraRtspUrl("");
     setCameraIp("");
     setCameraUsername("");
     setCameraPassword("");
     setCameraRefreshRate(1000);
     setCameraDetectedBrand(null);
+    setCameraMode("snapshot");
   };
 
   const handleAutoDetectCamera = async () => {
@@ -879,26 +907,48 @@ export default function Settings() {
             <h2 className="text-lg font-semibold">IP Camera</h2>
           </div>
           <p className="text-sm text-muted-foreground mb-4">
-            Connect an IP camera to monitor your prints. Just enter your camera's IP address
-            and we'll automatically detect the correct settings.
+            Connect an IP camera to monitor your prints. Choose between snapshot mode (periodic images) 
+            or live stream mode (continuous video via RTSP).
           </p>
           
+          {/* Mode selector */}
+          <div className="flex gap-2 mb-6">
+            <Button
+              variant={cameraMode === "snapshot" ? "default" : "outline"}
+              onClick={() => setCameraMode("snapshot")}
+              className="flex-1"
+              data-testid="button-mode-snapshot"
+            >
+              Snapshot Mode
+            </Button>
+            <Button
+              variant={cameraMode === "rtsp" ? "default" : "outline"}
+              onClick={() => setCameraMode("rtsp")}
+              className="flex-1"
+              data-testid="button-mode-rtsp"
+            >
+              Live Stream (RTSP)
+            </Button>
+          </div>
+          
           <div className="space-y-4">
-            {/* Simple IP-based setup */}
-            <div className="grid gap-2">
-              <Label htmlFor="camera-ip">Camera IP Address</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="camera-ip"
-                  placeholder="192.168.1.50"
-                  value={cameraIp}
-                  onChange={(e) => setCameraIp(e.target.value)}
-                  data-testid="input-camera-ip"
-                  className="flex-1"
-                />
-                <Button
-                  onClick={handleAutoDetectCamera}
-                  disabled={cameraDetecting || !cameraIp}
+            {cameraMode === "snapshot" ? (
+              <>
+                {/* Simple IP-based setup */}
+                <div className="grid gap-2">
+                  <Label htmlFor="camera-ip">Camera IP Address</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="camera-ip"
+                      placeholder="192.168.1.50"
+                      value={cameraIp}
+                      onChange={(e) => setCameraIp(e.target.value)}
+                      data-testid="input-camera-ip"
+                      className="flex-1"
+                    />
+                    <Button
+                      onClick={handleAutoDetectCamera}
+                      disabled={cameraDetecting || !cameraIp}
                   data-testid="button-detect-camera"
                 >
                   {cameraDetecting ? (
@@ -1064,6 +1114,72 @@ export default function Settings() {
                   </ul>
                 </div>
               </div>
+            )}
+              </>
+            ) : (
+              <>
+                {/* RTSP Live Stream mode */}
+                <div className="grid gap-2">
+                  <Label htmlFor="camera-rtsp">RTSP Stream URL</Label>
+                  <Input
+                    id="camera-rtsp"
+                    placeholder="rtsp://admin:password@192.168.1.50:554/cam/realmonitor?channel=1&subtype=1"
+                    value={cameraRtspUrl}
+                    onChange={(e) => setCameraRtspUrl(e.target.value)}
+                    data-testid="input-camera-rtsp"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Enter the full RTSP URL including credentials. For Lorex cameras: 
+                    rtsp://username:password@IP:554/cam/realmonitor?channel=1&subtype=1
+                  </p>
+                </div>
+                
+                {/* Current RTSP stream status */}
+                {(cameraSettings as any)?.rtspUrl && (
+                  <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-blue-400">Live Stream Active</p>
+                        <p className="text-xs text-muted-foreground">
+                          RTSP stream configured
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleClearCamera}
+                        disabled={cameraMutation.isPending}
+                        data-testid="button-clear-rtsp"
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                
+                <Button
+                  onClick={handleSaveRtspSettings}
+                  disabled={cameraMutation.isPending || !cameraRtspUrl}
+                  className="w-full"
+                  data-testid="button-save-rtsp"
+                >
+                  <Camera className="h-4 w-4 mr-2" />
+                  Start Live Stream
+                </Button>
+                
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <h3 className="font-medium text-sm mb-2">Common RTSP URL Formats</h3>
+                  <ul className="text-xs text-muted-foreground space-y-1">
+                    <li><strong>Lorex/Dahua:</strong> rtsp://user:pass@IP:554/cam/realmonitor?channel=1&subtype=1</li>
+                    <li><strong>Hikvision:</strong> rtsp://user:pass@IP:554/Streaming/channels/101</li>
+                    <li><strong>Generic ONVIF:</strong> rtsp://user:pass@IP:554/stream1</li>
+                  </ul>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Use subtype=1 for lower resolution (recommended) or subtype=0 for 4K.
+                  </p>
+                </div>
+              </>
             )}
           </div>
         </Card>

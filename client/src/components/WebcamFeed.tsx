@@ -1,16 +1,24 @@
 import { useState, useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Camera, Maximize2, Settings, WifiOff, RefreshCw } from "lucide-react";
+import { Camera, Maximize2, Settings, WifiOff, RefreshCw, Play, Square } from "lucide-react";
 import { Link } from "wouter";
+import Hls from "hls.js";
 
 interface CameraSettings {
   url: string | null;
+  rtspUrl: string | null;
   username: string | null;
   password: string | null;
   refreshRate: number;
   streamType: string;
+}
+
+interface StreamStatus {
+  running: boolean;
+  url: string | null;
+  uptime: number | null;
 }
 
 export default function WebcamFeed() {
@@ -18,18 +26,115 @@ export default function WebcamFeed() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [streamLoading, setStreamLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
+  const queryClient = useQueryClient();
 
   const { data: cameraSettings } = useQuery<CameraSettings>({
     queryKey: ["/api/settings/camera"],
     staleTime: 30000,
   });
 
-  const isConfigured = cameraSettings?.url;
+  const { data: streamStatus, refetch: refetchStreamStatus } = useQuery<StreamStatus>({
+    queryKey: ["/api/stream/status"],
+    staleTime: 5000,
+    refetchInterval: 5000,
+  });
+
+  const isConfigured = cameraSettings?.url || cameraSettings?.rtspUrl;
+  const isRtspMode = !!cameraSettings?.rtspUrl;
+  const isStreamRunning = streamStatus?.running;
+
+  const startStreamMutation = useMutation({
+    mutationFn: async (rtspUrl: string) => {
+      const response = await fetch("/api/stream/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rtspUrl }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to start stream");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      refetchStreamStatus();
+    },
+  });
+
+  const stopStreamMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/stream/stop", { method: "POST" });
+      return response.json();
+    },
+    onSuccess: () => {
+      refetchStreamStatus();
+    },
+  });
 
   useEffect(() => {
-    if (!isConfigured) {
+    if (isRtspMode && cameraSettings?.rtspUrl && !isStreamRunning && !streamLoading) {
+      setStreamLoading(true);
+      startStreamMutation.mutate(cameraSettings.rtspUrl, {
+        onSettled: () => setStreamLoading(false),
+      });
+    }
+  }, [isRtspMode, cameraSettings?.rtspUrl]);
+
+  useEffect(() => {
+    if (!isRtspMode || !isStreamRunning || !videoRef.current) return;
+
+    const hlsUrl = "/api/stream/hls/stream.m3u8";
+
+    if (Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+        liveSyncDurationCount: 1,
+        liveMaxLatencyDurationCount: 3,
+      });
+      
+      hls.loadSource(hlsUrl);
+      hls.attachMedia(videoRef.current);
+      
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        setIsLoading(false);
+        setHasError(false);
+        videoRef.current?.play().catch(() => {});
+      });
+
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        if (data.fatal) {
+          console.error("[HLS] Fatal error:", data.type, data.details);
+          setHasError(true);
+          setIsLoading(false);
+        }
+      });
+
+      hlsRef.current = hls;
+    } else if (videoRef.current.canPlayType("application/vnd.apple.mpegurl")) {
+      videoRef.current.src = hlsUrl;
+      videoRef.current.addEventListener("loadedmetadata", () => {
+        setIsLoading(false);
+        setHasError(false);
+        videoRef.current?.play().catch(() => {});
+      });
+    }
+
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, [isRtspMode, isStreamRunning]);
+
+  useEffect(() => {
+    if (isRtspMode || !isConfigured) {
       setIsLoading(false);
       return;
     }
@@ -77,7 +182,7 @@ export default function WebcamFeed() {
         URL.revokeObjectURL(imageSrc);
       }
     };
-  }, [isConfigured, cameraSettings?.refreshRate]);
+  }, [isConfigured, isRtspMode, cameraSettings?.refreshRate]);
 
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
@@ -129,9 +234,15 @@ export default function WebcamFeed() {
         >
           {hasError ? "OFFLINE" : "LIVE"}
         </Badge>
-        <Badge variant="outline" className="bg-black/50 text-white border-white/20 backdrop-blur-sm">
-          4K
-        </Badge>
+        {isRtspMode ? (
+          <Badge variant="outline" className="bg-blue-500/50 text-white border-white/20 backdrop-blur-sm">
+            STREAM
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="bg-black/50 text-white border-white/20 backdrop-blur-sm">
+            4K
+          </Badge>
+        )}
       </div>
       
       <div className="absolute top-4 right-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
@@ -144,7 +255,7 @@ export default function WebcamFeed() {
         </button>
       </div>
 
-      {isLoading ? (
+      {isLoading || streamLoading ? (
         <div className="w-full h-full flex items-center justify-center min-h-[200px]">
           <RefreshCw className="h-8 w-8 text-muted-foreground animate-spin" />
         </div>
@@ -153,6 +264,15 @@ export default function WebcamFeed() {
           <WifiOff className="h-12 w-12 mb-2" />
           <p className="text-sm">Camera unavailable</p>
         </div>
+      ) : isRtspMode ? (
+        <video 
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          className={`w-full h-full object-contain ${isFullscreen ? 'max-h-screen' : ''}`}
+          data-testid="video-camera-feed"
+        />
       ) : (
         <img 
           ref={imgRef}
@@ -167,7 +287,12 @@ export default function WebcamFeed() {
       <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
         <div className="flex items-center gap-2 text-white/80 text-xs font-mono">
           <Camera className="h-3 w-3" />
-          <span>IP Camera</span>
+          <span>{isRtspMode ? "Live Stream" : "IP Camera"}</span>
+          {isStreamRunning && streamStatus?.uptime && (
+            <span className="ml-auto">
+              Uptime: {Math.floor(streamStatus.uptime / 60)}m {streamStatus.uptime % 60}s
+            </span>
+          )}
         </div>
       </div>
     </Card>

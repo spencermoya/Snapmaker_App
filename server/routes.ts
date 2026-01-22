@@ -8,6 +8,7 @@ import { startWatcher, stopWatcher, getWatcherStatus, initializeWatcher } from "
 import { startLubanProxy, stopLubanProxy, getLubanProxyStatus, initializeLubanProxy } from "./lubanProxy";
 import { extractThumbnail } from "./thumbnailExtractor";
 import { getVapidPublicKey, isPushEnabled } from "./pushService";
+import { startStream, stopStream, getStreamInfo, getHlsDirectory, playlistExists } from "./streamService";
 import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } from "@shared/schema";
 import { z } from "zod";
 
@@ -1243,6 +1244,7 @@ export async function registerRoutes(
   app.get("/api/settings/camera", async (req, res) => {
     try {
       const cameraUrl = await storage.getSetting("camera_url");
+      const cameraRtspUrl = await storage.getSetting("camera_rtsp_url");
       const cameraUsername = await storage.getSetting("camera_username");
       const cameraPassword = await storage.getSetting("camera_password");
       const cameraRefreshRate = await storage.getSetting("camera_refresh_rate");
@@ -1250,6 +1252,7 @@ export async function registerRoutes(
       
       res.json({
         url: cameraUrl,
+        rtspUrl: cameraRtspUrl,
         username: cameraUsername,
         password: cameraPassword ? "***" : null,
         refreshRate: cameraRefreshRate ? parseInt(cameraRefreshRate) : 1000,
@@ -1262,9 +1265,10 @@ export async function registerRoutes(
 
   app.put("/api/settings/camera", async (req, res) => {
     try {
-      const { url, username, password, refreshRate, streamType, clearPassword } = req.body;
+      const { url, rtspUrl, username, password, refreshRate, streamType, clearPassword } = req.body;
       
       await storage.setSetting("camera_url", url || null);
+      await storage.setSetting("camera_rtsp_url", rtspUrl || null);
       await storage.setSetting("camera_username", username || null);
       
       if (clearPassword) {
@@ -1275,6 +1279,11 @@ export async function registerRoutes(
       
       await storage.setSetting("camera_refresh_rate", refreshRate ? String(refreshRate) : "1000");
       await storage.setSetting("camera_stream_type", streamType || "snapshot");
+      
+      // Stop any running stream if RTSP URL changed or was cleared
+      if (!rtspUrl) {
+        stopStream();
+      }
       
       res.json({ success: true, message: "Camera settings saved" });
     } catch (error) {
@@ -1442,6 +1451,88 @@ export async function registerRoutes(
       console.error("[Camera] Snapshot error:", error);
       res.status(502).json({ error: "Failed to fetch camera snapshot" });
     }
+  });
+
+  // RTSP Live Streaming endpoints
+  app.post("/api/stream/start", async (req, res) => {
+    try {
+      const { rtspUrl } = req.body;
+      
+      if (!rtspUrl) {
+        return res.status(400).json({ error: "RTSP URL is required" });
+      }
+      
+      // Validate RTSP URL format
+      if (!rtspUrl.startsWith("rtsp://")) {
+        return res.status(400).json({ error: "Invalid RTSP URL format. Must start with rtsp://" });
+      }
+      
+      // Extract host from RTSP URL and validate it's a local network address
+      try {
+        const urlWithoutProtocol = rtspUrl.replace("rtsp://", "");
+        const hostPart = urlWithoutProtocol.split("@").pop()?.split("/")[0]?.split(":")[0] || "";
+        
+        const isLocalNetwork = 
+          hostPart === "localhost" ||
+          hostPart.startsWith("192.168.") ||
+          hostPart.startsWith("10.") ||
+          hostPart.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) ||
+          hostPart.endsWith(".local");
+          
+        if (!isLocalNetwork) {
+          return res.status(400).json({ error: "Only local network cameras allowed" });
+        }
+      } catch {
+        return res.status(400).json({ error: "Invalid RTSP URL" });
+      }
+      
+      console.log("[Stream] Starting stream request received");
+      const result = await startStream(rtspUrl);
+      
+      if (result.success) {
+        res.json({ success: true, message: "Stream started", hlsUrl: "/api/stream/hls/stream.m3u8" });
+      } else {
+        res.status(500).json({ error: result.error || "Failed to start stream" });
+      }
+    } catch (error) {
+      console.error("[Stream] Start error:", error);
+      res.status(500).json({ error: "Failed to start stream" });
+    }
+  });
+
+  app.post("/api/stream/stop", (req, res) => {
+    stopStream();
+    res.json({ success: true, message: "Stream stopped" });
+  });
+
+  app.get("/api/stream/status", (req, res) => {
+    const info = getStreamInfo();
+    res.json(info);
+  });
+
+  // Serve HLS files
+  app.get("/api/stream/hls/:filename", (req, res) => {
+    const { filename } = req.params;
+    const hlsDir = getHlsDirectory();
+    const filePath = path.join(hlsDir, filename);
+    
+    // Security: only allow .m3u8 and .ts files
+    if (!filename.endsWith(".m3u8") && !filename.endsWith(".ts")) {
+      return res.status(400).json({ error: "Invalid file type" });
+    }
+    
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "Stream not ready" });
+    }
+    
+    // Set appropriate content type
+    const contentType = filename.endsWith(".m3u8") ? "application/vnd.apple.mpegurl" : "video/mp2t";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    
+    fs.createReadStream(filePath).pipe(res);
   });
 
   // Push notification endpoints
