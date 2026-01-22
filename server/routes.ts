@@ -1282,6 +1282,105 @@ export async function registerRoutes(
     }
   });
 
+  // Camera auto-detect - tries common snapshot URL patterns to find what works
+  app.post("/api/camera/detect", async (req, res) => {
+    try {
+      const { ip, username, password } = req.body;
+      
+      if (!ip) {
+        return res.status(400).json({ error: "IP address is required" });
+      }
+      
+      // Strict validation: only allow valid IP addresses or hostnames, no paths/ports/userinfo
+      // This prevents SSRF attacks via malformed input like "192.168.1.1@evil.com"
+      const validIpPattern = /^(?:(?:\d{1,3}\.){3}\d{1,3}|[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*)$/;
+      if (!validIpPattern.test(ip)) {
+        return res.status(400).json({ error: "Invalid IP address format. Enter only the IP address (e.g., 192.168.1.50)" });
+      }
+      
+      // Validate IP is a local network address
+      const isLocalNetwork = 
+        ip === "localhost" ||
+        ip.startsWith("192.168.") ||
+        ip.startsWith("10.") ||
+        ip.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) ||
+        ip.endsWith(".local");
+        
+      if (!isLocalNetwork) {
+        return res.status(400).json({ error: "Only local network IP addresses allowed" });
+      }
+      
+      // Double-check by parsing the constructed URL
+      try {
+        const testUrl = new URL(`http://${ip}/test`);
+        if (testUrl.username || testUrl.password || testUrl.port) {
+          return res.status(400).json({ error: "Invalid IP address format" });
+        }
+      } catch {
+        return res.status(400).json({ error: "Invalid IP address format" });
+      }
+      
+      // Common snapshot URL patterns for different camera brands
+      const patterns = [
+        { brand: "Lorex/Dahua", path: "/cgi-bin/snapshot.cgi" },
+        { brand: "Lorex/Dahua (alt)", path: "/cgi-bin/snapshot.cgi?channel=1" },
+        { brand: "Hikvision", path: "/ISAPI/Streaming/channels/1/picture" },
+        { brand: "Hikvision (alt)", path: "/Streaming/channels/1/picture" },
+        { brand: "ONVIF", path: "/onvif-http/snapshot?Profile_1" },
+        { brand: "Amcrest", path: "/cgi-bin/snapshot.cgi?chn=0" },
+        { brand: "Reolink", path: "/cgi-bin/api.cgi?cmd=Snap&channel=0" },
+        { brand: "Axis", path: "/jpg/image.jpg" },
+        { brand: "Axis (alt)", path: "/axis-cgi/jpg/image.cgi" },
+        { brand: "Generic", path: "/snap.jpg" },
+        { brand: "Generic (alt)", path: "/snapshot.jpg" },
+        { brand: "Generic MJPEG", path: "/cgi-bin/snapshot.cgi" },
+      ];
+      
+      const headers: Record<string, string> = {};
+      if (username && password) {
+        const auth = Buffer.from(`${username}:${password}`).toString("base64");
+        headers["Authorization"] = `Basic ${auth}`;
+      }
+      
+      console.log(`[Camera] Auto-detecting camera at ${ip}...`);
+      
+      // Try each pattern
+      for (const pattern of patterns) {
+        const url = `http://${ip}${pattern.path}`;
+        try {
+          const response = await fetch(url, {
+            headers,
+            signal: AbortSignal.timeout(5000),
+          });
+          
+          if (response.ok) {
+            const contentType = response.headers.get("content-type") || "";
+            if (contentType.includes("image")) {
+              console.log(`[Camera] Found working URL: ${url} (${pattern.brand})`);
+              return res.json({ 
+                success: true, 
+                url,
+                brand: pattern.brand,
+                message: `Detected ${pattern.brand} camera`
+              });
+            }
+          }
+        } catch (e) {
+          // Try next pattern
+        }
+      }
+      
+      console.log(`[Camera] No working snapshot URL found for ${ip}`);
+      res.status(404).json({ 
+        error: "Could not detect camera. Make sure the IP is correct and the camera is accessible.",
+        suggestion: "If you know your camera's snapshot URL, you can enter it manually."
+      });
+    } catch (error) {
+      console.error("[Camera] Auto-detect error:", error);
+      res.status(500).json({ error: "Failed to detect camera" });
+    }
+  });
+
   // Camera stream proxy - fetches snapshot from camera and returns it
   // Note: This is designed for local network use only. For security, validate URLs.
   app.get("/api/camera/snapshot", async (req, res) => {

@@ -85,12 +85,13 @@ shared/           # Shared code between frontend/backend
   - Service worker handles push events in `client/public/sw.js`
   - iOS PWA requirements: iOS 16.4+, HTTPS, app installed to home screen, user permission granted
 - **IP Camera integration**: Connect any IP camera via snapshot URL for live print monitoring
+  - Auto-detect feature: Enter just the camera's IP address and the app tries common URL patterns for Lorex, Hikvision, Dahua, ONVIF, Reolink, Axis, Amcrest, and generic cameras
   - Supports HTTP Basic Auth for cameras requiring credentials
   - Configurable refresh rate (default 1000ms = 1 fps)
   - Full 4K resolution display with fullscreen mode
-  - Server-side proxy prevents CORS issues and adds security (LAN-only URLs allowed)
+  - Server-side proxy prevents CORS issues and adds security (LAN-only URLs allowed, strict IP validation)
   - Camera settings stored in appSettings table (camera_url, camera_username, camera_password, camera_refresh_rate)
-  - Common URL formats: Lorex `http://IP/cgi-bin/snapshot.cgi`, ONVIF `http://IP/onvif-http/snapshot`
+  - Manual URL entry available in "Advanced options" if auto-detect fails
 
 ### UI Libraries
 - **Radix UI**: Headless component primitives for accessibility

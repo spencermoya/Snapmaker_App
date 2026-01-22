@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Plus, Trash2, Wifi, WifiOff, ArrowLeft, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Bell, Camera } from "lucide-react";
+import { Plus, Trash2, Wifi, WifiOff, ArrowLeft, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Bell, Camera, Loader2, Search, ChevronDown, ChevronUp } from "lucide-react";
 import { useLocation } from "wouter";
 import type { Printer } from "@shared/schema";
 
@@ -58,9 +58,13 @@ export default function Settings() {
   const [pushTestLoading, setPushTestLoading] = useState(false);
 
   const [cameraUrl, setCameraUrl] = useState("");
+  const [cameraIp, setCameraIp] = useState("");
   const [cameraUsername, setCameraUsername] = useState("");
   const [cameraPassword, setCameraPassword] = useState("");
   const [cameraRefreshRate, setCameraRefreshRate] = useState(1000);
+  const [cameraDetecting, setCameraDetecting] = useState(false);
+  const [cameraDetectedBrand, setCameraDetectedBrand] = useState<string | null>(null);
+  const [showAdvancedCamera, setShowAdvancedCamera] = useState(false);
 
   const { data: pushStatus } = useQuery<PushStatus>({
     queryKey: ["/api/push/status"],
@@ -78,6 +82,15 @@ export default function Settings() {
       setCameraUsername(cameraSettings.username || "");
       setCameraPassword(cameraSettings.password === "***" ? "" : (cameraSettings.password || ""));
       setCameraRefreshRate(cameraSettings.refreshRate || 1000);
+      // Extract IP from existing URL if present
+      if (cameraSettings.url) {
+        try {
+          const parsedUrl = new URL(cameraSettings.url);
+          setCameraIp(parsedUrl.hostname);
+        } catch {
+          setCameraIp("");
+        }
+      }
     }
   }, [cameraSettings]);
 
@@ -118,9 +131,57 @@ export default function Settings() {
       clearPassword: true,
     });
     setCameraUrl("");
+    setCameraIp("");
     setCameraUsername("");
     setCameraPassword("");
     setCameraRefreshRate(1000);
+    setCameraDetectedBrand(null);
+  };
+
+  const handleAutoDetectCamera = async () => {
+    if (!cameraIp) {
+      toast.error("Please enter the camera's IP address");
+      return;
+    }
+    
+    setCameraDetecting(true);
+    setCameraDetectedBrand(null);
+    
+    try {
+      const response = await fetch("/api/camera/detect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ip: cameraIp,
+          username: cameraUsername,
+          password: cameraPassword,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        setCameraUrl(data.url);
+        setCameraDetectedBrand(data.brand);
+        toast.success(data.message);
+        
+        // Auto-save the settings
+        cameraMutation.mutate({
+          url: data.url,
+          username: cameraUsername,
+          password: cameraPassword,
+          refreshRate: cameraRefreshRate,
+        });
+      } else {
+        toast.error(data.error || "Could not detect camera");
+        setShowAdvancedCamera(true);
+      }
+    } catch (error) {
+      toast.error("Failed to detect camera");
+      setShowAdvancedCamera(true);
+    } finally {
+      setCameraDetecting(false);
+    }
   };
 
   const checkPushSubscription = useCallback(async () => {
@@ -818,29 +879,79 @@ export default function Settings() {
             <h2 className="text-lg font-semibold">IP Camera</h2>
           </div>
           <p className="text-sm text-muted-foreground mb-4">
-            Connect an IP camera to monitor your prints. Enter the camera's snapshot URL 
-            for live video feed at full 4K resolution.
+            Connect an IP camera to monitor your prints. Just enter your camera's IP address
+            and we'll automatically detect the correct settings.
           </p>
           
           <div className="space-y-4">
+            {/* Simple IP-based setup */}
             <div className="grid gap-2">
-              <Label htmlFor="camera-url">Camera Snapshot URL</Label>
-              <Input
-                id="camera-url"
-                placeholder="http://192.168.1.50/cgi-bin/snapshot.cgi"
-                value={cameraUrl}
-                onChange={(e) => setCameraUrl(e.target.value)}
-                data-testid="input-camera-url"
-              />
+              <Label htmlFor="camera-ip">Camera IP Address</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="camera-ip"
+                  placeholder="192.168.1.50"
+                  value={cameraIp}
+                  onChange={(e) => setCameraIp(e.target.value)}
+                  data-testid="input-camera-ip"
+                  className="flex-1"
+                />
+                <Button
+                  onClick={handleAutoDetectCamera}
+                  disabled={cameraDetecting || !cameraIp}
+                  data-testid="button-detect-camera"
+                >
+                  {cameraDetecting ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Search className="h-4 w-4 mr-2" />
+                  )}
+                  {cameraDetecting ? "Detecting..." : "Detect Camera"}
+                </Button>
+              </div>
               <p className="text-xs text-muted-foreground">
-                Enter the full URL to your camera's JPEG snapshot endpoint. 
-                For Lorex cameras: <code className="bg-muted px-1 rounded">http://IP:PORT/cgi-bin/snapshot.cgi</code>
+                Enter just the IP address (e.g., 192.168.1.50). We'll try common camera brands automatically.
               </p>
             </div>
             
+            {/* Detection result */}
+            {cameraDetectedBrand && (
+              <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-green-500" />
+                <span className="text-sm text-green-400">
+                  Detected: <strong>{cameraDetectedBrand}</strong> camera
+                </span>
+              </div>
+            )}
+            
+            {/* Current camera status */}
+            {cameraSettings?.url && (
+              <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-blue-400">Camera Connected</p>
+                    <p className="text-xs text-muted-foreground truncate max-w-[300px]">
+                      {cameraSettings.url}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleClearCamera}
+                    disabled={cameraMutation.isPending}
+                    data-testid="button-clear-camera"
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Remove
+                  </Button>
+                </div>
+              </div>
+            )}
+            
+            {/* Credentials - shown when camera requires auth */}
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="camera-username">Username (optional)</Label>
+                <Label htmlFor="camera-username">Username (if required)</Label>
                 <Input
                   id="camera-username"
                   placeholder="admin"
@@ -850,11 +961,11 @@ export default function Settings() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="camera-password">Password (optional)</Label>
+                <Label htmlFor="camera-password">Password (if required)</Label>
                 <Input
                   id="camera-password"
                   type="password"
-                  placeholder={cameraSettings?.password === "***" ? "(saved - enter to change)" : "••••••••"}
+                  placeholder={cameraSettings?.password === "***" ? "(saved)" : ""}
                   value={cameraPassword}
                   onChange={(e) => setCameraPassword(e.target.value)}
                   data-testid="input-camera-password"
@@ -864,55 +975,96 @@ export default function Settings() {
                 )}
               </div>
             </div>
+            <p className="text-xs text-muted-foreground -mt-2">
+              Enter credentials if your camera requires login. Try detecting without them first.
+            </p>
             
-            <div className="grid gap-2">
-              <Label htmlFor="camera-refresh">Refresh Rate (ms)</Label>
-              <Input
-                id="camera-refresh"
-                type="number"
-                min={100}
-                max={10000}
-                step={100}
-                value={cameraRefreshRate}
-                onChange={(e) => setCameraRefreshRate(parseInt(e.target.value) || 1000)}
-                data-testid="input-camera-refresh"
-              />
-              <p className="text-xs text-muted-foreground">
-                How often to fetch a new frame (1000 = 1 fps, 500 = 2 fps). Lower values use more bandwidth.
-              </p>
-            </div>
-            
-            <div className="flex gap-2">
-              <Button
-                onClick={handleSaveCameraSettings}
-                disabled={cameraMutation.isPending}
-                data-testid="button-save-camera"
-              >
-                <Camera className="h-4 w-4 mr-2" />
-                Save Camera Settings
-              </Button>
-              {cameraSettings?.url && (
+            {/* Quick save button - visible if IP is entered but camera not yet configured */}
+            {cameraIp && !cameraSettings?.url && (
+              <div className="flex gap-2">
                 <Button
-                  variant="outline"
-                  onClick={handleClearCamera}
-                  disabled={cameraMutation.isPending}
-                  data-testid="button-clear-camera"
+                  onClick={handleAutoDetectCamera}
+                  disabled={cameraDetecting || !cameraIp}
+                  className="flex-1"
+                  data-testid="button-detect-camera-main"
                 >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Remove Camera
+                  {cameraDetecting ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Search className="h-4 w-4 mr-2" />
+                  )}
+                  {cameraDetecting ? "Detecting..." : "Auto-Detect & Connect"}
                 </Button>
-              )}
-            </div>
+              </div>
+            )}
             
-            <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-              <h3 className="font-medium text-sm mb-2 text-blue-400">Common Camera URLs</h3>
-              <ul className="text-xs text-muted-foreground space-y-1">
-                <li><strong>Lorex:</strong> http://IP/cgi-bin/snapshot.cgi</li>
-                <li><strong>Wyze:</strong> Use RTSP via docker-wyze-bridge</li>
-                <li><strong>Generic ONVIF:</strong> http://IP/onvif-http/snapshot</li>
-                <li><strong>MJPEG stream:</strong> http://IP/video.mjpg (may work directly)</li>
-              </ul>
-            </div>
+            {/* Advanced options toggle */}
+            <button
+              type="button"
+              onClick={() => setShowAdvancedCamera(!showAdvancedCamera)}
+              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {showAdvancedCamera ? (
+                <ChevronUp className="h-4 w-4" />
+              ) : (
+                <ChevronDown className="h-4 w-4" />
+              )}
+              Advanced options
+            </button>
+            
+            {showAdvancedCamera && (
+              <div className="space-y-4 pl-4 border-l-2 border-muted">
+                <div className="grid gap-2">
+                  <Label htmlFor="camera-url">Manual Snapshot URL</Label>
+                  <Input
+                    id="camera-url"
+                    placeholder="http://192.168.1.50/cgi-bin/snapshot.cgi"
+                    value={cameraUrl}
+                    onChange={(e) => setCameraUrl(e.target.value)}
+                    data-testid="input-camera-url"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    If auto-detect doesn't work, enter the full snapshot URL manually.
+                  </p>
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="camera-refresh">Refresh Rate (ms)</Label>
+                  <Input
+                    id="camera-refresh"
+                    type="number"
+                    min={100}
+                    max={10000}
+                    step={100}
+                    value={cameraRefreshRate}
+                    onChange={(e) => setCameraRefreshRate(parseInt(e.target.value) || 1000)}
+                    data-testid="input-camera-refresh"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    How often to fetch a new frame (1000 = 1 fps, 500 = 2 fps).
+                  </p>
+                </div>
+                
+                <Button
+                  onClick={handleSaveCameraSettings}
+                  disabled={cameraMutation.isPending}
+                  data-testid="button-save-camera"
+                >
+                  <Camera className="h-4 w-4 mr-2" />
+                  Save Manual Settings
+                </Button>
+                
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <h3 className="font-medium text-sm mb-2">Common Camera URLs</h3>
+                  <ul className="text-xs text-muted-foreground space-y-1">
+                    <li><strong>Lorex/Dahua:</strong> http://IP/cgi-bin/snapshot.cgi</li>
+                    <li><strong>Hikvision:</strong> http://IP/ISAPI/Streaming/channels/1/picture</li>
+                    <li><strong>ONVIF:</strong> http://IP/onvif-http/snapshot</li>
+                    <li><strong>Reolink:</strong> http://IP/cgi-bin/api.cgi?cmd=Snap&channel=0</li>
+                  </ul>
+                </div>
+              </div>
+            )}
           </div>
         </Card>
 
