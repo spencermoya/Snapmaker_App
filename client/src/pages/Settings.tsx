@@ -147,7 +147,14 @@ export default function Settings() {
     });
   };
 
-  const handleClearCamera = () => {
+  const handleClearCamera = async () => {
+    // Stop any running stream before clearing settings
+    try {
+      await fetch("/api/stream/stop", { method: "POST" });
+    } catch {
+      // Ignore errors if stream wasn't running
+    }
+    
     cameraMutation.mutate({
       url: "",
       rtspUrl: "",

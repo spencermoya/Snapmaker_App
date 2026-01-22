@@ -32,18 +32,22 @@ export function getStreamInfo(): { running: boolean; url: string | null; uptime:
   };
 }
 
-export function startStream(rtspUrl: string): Promise<{ success: boolean; error?: string }> {
+export async function startStream(rtspUrl: string): Promise<{ success: boolean; error?: string }> {
+  // If already streaming from same URL, return success
+  if (isStreamRunning() && currentRtspUrl === rtspUrl) {
+    console.log("[Stream] Already streaming from this URL");
+    return { success: true };
+  }
+  
+  // Wait for any existing stream to fully stop
+  if (isStreamRunning()) {
+    console.log("[Stream] Waiting for previous stream to stop...");
+    await stopStream();
+  }
+  
+  ensureHlsDirectory();
+  
   return new Promise((resolve) => {
-    if (isStreamRunning()) {
-      if (currentRtspUrl === rtspUrl) {
-        console.log("[Stream] Already streaming from this URL");
-        resolve({ success: true });
-        return;
-      }
-      stopStream();
-    }
-
-    ensureHlsDirectory();
     
     const playlistPath = path.join(HLS_OUTPUT_DIR, "stream.m3u8");
     const segmentPath = path.join(HLS_OUTPUT_DIR, "segment%03d.ts");
@@ -118,12 +122,38 @@ export function startStream(rtspUrl: string): Promise<{ success: boolean; error?
   });
 }
 
-export function stopStream(): void {
-  if (ffmpegProcess) {
+export function stopStream(): Promise<void> {
+  return new Promise((resolve) => {
+    if (!ffmpegProcess) {
+      resolve();
+      return;
+    }
+    
     console.log("[Stream] Stopping ffmpeg process");
-    ffmpegProcess.kill("SIGTERM");
-    cleanup();
-  }
+    const proc = ffmpegProcess;
+    
+    // Set up exit handler before killing
+    const exitHandler = () => {
+      cleanup();
+      resolve();
+    };
+    
+    proc.once("exit", exitHandler);
+    
+    // Set a timeout in case process doesn't exit gracefully
+    const timeout = setTimeout(() => {
+      proc.removeListener("exit", exitHandler);
+      try {
+        proc.kill("SIGKILL");
+      } catch {}
+      cleanup();
+      resolve();
+    }, 5000);
+    
+    proc.once("exit", () => clearTimeout(timeout));
+    
+    proc.kill("SIGTERM");
+  });
 }
 
 function cleanup(): void {

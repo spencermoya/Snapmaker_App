@@ -1467,19 +1467,41 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid RTSP URL format. Must start with rtsp://" });
       }
       
-      // Extract host from RTSP URL and validate it's a local network address
+      // Use URL parsing to properly extract hostname (handles userinfo correctly)
+      // Replace rtsp:// with http:// temporarily for URL parsing
       try {
-        const urlWithoutProtocol = rtspUrl.replace("rtsp://", "");
-        const hostPart = urlWithoutProtocol.split("@").pop()?.split("/")[0]?.split(":")[0] || "";
+        const httpUrl = rtspUrl.replace("rtsp://", "http://");
+        const parsedUrl = new URL(httpUrl);
+        const hostname = parsedUrl.hostname;
         
-        const isLocalNetwork = 
-          hostPart === "localhost" ||
-          hostPart.startsWith("192.168.") ||
-          hostPart.startsWith("10.") ||
-          hostPart.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) ||
-          hostPart.endsWith(".local");
-          
+        // Strict IP validation using regex
+        const ipv4Regex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+        const ipMatch = hostname.match(ipv4Regex);
+        
+        let isLocalNetwork = false;
+        
+        if (hostname === "localhost") {
+          isLocalNetwork = true;
+        } else if (hostname.endsWith(".local")) {
+          isLocalNetwork = true;
+        } else if (ipMatch) {
+          const [, o1, o2, o3, o4] = ipMatch.map(Number);
+          // 192.168.x.x
+          if (o1 === 192 && o2 === 168) {
+            isLocalNetwork = true;
+          }
+          // 10.x.x.x
+          else if (o1 === 10) {
+            isLocalNetwork = true;
+          }
+          // 172.16.x.x - 172.31.x.x
+          else if (o1 === 172 && o2 >= 16 && o2 <= 31) {
+            isLocalNetwork = true;
+          }
+        }
+        
         if (!isLocalNetwork) {
+          console.warn(`[Stream] Blocked RTSP to non-local host: ${hostname}`);
           return res.status(400).json({ error: "Only local network cameras allowed" });
         }
       } catch {
@@ -1500,8 +1522,8 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/stream/stop", (req, res) => {
-    stopStream();
+  app.post("/api/stream/stop", async (req, res) => {
+    await stopStream();
     res.json({ success: true, message: "Stream stopped" });
   });
 
