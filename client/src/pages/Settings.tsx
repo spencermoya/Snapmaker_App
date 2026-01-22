@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Plus, Trash2, Wifi, WifiOff, ArrowLeft, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Bell } from "lucide-react";
+import { Plus, Trash2, Wifi, WifiOff, ArrowLeft, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Bell, Camera } from "lucide-react";
 import { useLocation } from "wouter";
 import type { Printer } from "@shared/schema";
 
@@ -34,6 +34,14 @@ interface PushStatus {
   publicKey: string | null;
 }
 
+interface CameraSettings {
+  url: string | null;
+  username: string | null;
+  password: string | null;
+  refreshRate: number;
+  streamType: string;
+}
+
 export default function Settings() {
   const [, setLocation] = useLocation();
   const [newPrinterName, setNewPrinterName] = useState("");
@@ -49,10 +57,71 @@ export default function Settings() {
   const [pushLoading, setPushLoading] = useState(false);
   const [pushTestLoading, setPushTestLoading] = useState(false);
 
+  const [cameraUrl, setCameraUrl] = useState("");
+  const [cameraUsername, setCameraUsername] = useState("");
+  const [cameraPassword, setCameraPassword] = useState("");
+  const [cameraRefreshRate, setCameraRefreshRate] = useState(1000);
+
   const { data: pushStatus } = useQuery<PushStatus>({
     queryKey: ["/api/push/status"],
     staleTime: Infinity,
   });
+
+  const { data: cameraSettings } = useQuery<CameraSettings>({
+    queryKey: ["/api/settings/camera"],
+    staleTime: 30000,
+  });
+
+  useEffect(() => {
+    if (cameraSettings) {
+      setCameraUrl(cameraSettings.url || "");
+      setCameraUsername(cameraSettings.username || "");
+      setCameraPassword(cameraSettings.password === "***" ? "" : (cameraSettings.password || ""));
+      setCameraRefreshRate(cameraSettings.refreshRate || 1000);
+    }
+  }, [cameraSettings]);
+
+  const cameraMutation = useMutation({
+    mutationFn: async (data: { url: string; username: string; password: string; refreshRate: number; clearPassword?: boolean }) => {
+      const response = await fetch("/api/settings/camera", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Failed to save camera settings");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/camera"] });
+      toast.success("Camera settings saved");
+    },
+    onError: () => {
+      toast.error("Failed to save camera settings");
+    },
+  });
+
+  const handleSaveCameraSettings = () => {
+    cameraMutation.mutate({
+      url: cameraUrl || "",
+      username: cameraUsername,
+      password: cameraPassword,
+      refreshRate: cameraRefreshRate,
+    });
+  };
+
+  const handleClearCamera = () => {
+    cameraMutation.mutate({
+      url: "",
+      username: "",
+      password: "",
+      refreshRate: 1000,
+      clearPassword: true,
+    });
+    setCameraUrl("");
+    setCameraUsername("");
+    setCameraPassword("");
+    setCameraRefreshRate(1000);
+  };
 
   const checkPushSubscription = useCallback(async () => {
     try {
@@ -741,6 +810,110 @@ export default function Settings() {
               </div>
             </div>
           )}
+        </Card>
+
+        <Card className="p-6 bg-secondary/20 border-border">
+          <div className="flex items-center gap-2 mb-4">
+            <Camera className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold">IP Camera</h2>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            Connect an IP camera to monitor your prints. Enter the camera's snapshot URL 
+            for live video feed at full 4K resolution.
+          </p>
+          
+          <div className="space-y-4">
+            <div className="grid gap-2">
+              <Label htmlFor="camera-url">Camera Snapshot URL</Label>
+              <Input
+                id="camera-url"
+                placeholder="http://192.168.1.50/cgi-bin/snapshot.cgi"
+                value={cameraUrl}
+                onChange={(e) => setCameraUrl(e.target.value)}
+                data-testid="input-camera-url"
+              />
+              <p className="text-xs text-muted-foreground">
+                Enter the full URL to your camera's JPEG snapshot endpoint. 
+                For Lorex cameras: <code className="bg-muted px-1 rounded">http://IP:PORT/cgi-bin/snapshot.cgi</code>
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="camera-username">Username (optional)</Label>
+                <Input
+                  id="camera-username"
+                  placeholder="admin"
+                  value={cameraUsername}
+                  onChange={(e) => setCameraUsername(e.target.value)}
+                  data-testid="input-camera-username"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="camera-password">Password (optional)</Label>
+                <Input
+                  id="camera-password"
+                  type="password"
+                  placeholder={cameraSettings?.password === "***" ? "(saved - enter to change)" : "••••••••"}
+                  value={cameraPassword}
+                  onChange={(e) => setCameraPassword(e.target.value)}
+                  data-testid="input-camera-password"
+                />
+                {cameraSettings?.password === "***" && !cameraPassword && (
+                  <p className="text-xs text-green-500">Password saved</p>
+                )}
+              </div>
+            </div>
+            
+            <div className="grid gap-2">
+              <Label htmlFor="camera-refresh">Refresh Rate (ms)</Label>
+              <Input
+                id="camera-refresh"
+                type="number"
+                min={100}
+                max={10000}
+                step={100}
+                value={cameraRefreshRate}
+                onChange={(e) => setCameraRefreshRate(parseInt(e.target.value) || 1000)}
+                data-testid="input-camera-refresh"
+              />
+              <p className="text-xs text-muted-foreground">
+                How often to fetch a new frame (1000 = 1 fps, 500 = 2 fps). Lower values use more bandwidth.
+              </p>
+            </div>
+            
+            <div className="flex gap-2">
+              <Button
+                onClick={handleSaveCameraSettings}
+                disabled={cameraMutation.isPending}
+                data-testid="button-save-camera"
+              >
+                <Camera className="h-4 w-4 mr-2" />
+                Save Camera Settings
+              </Button>
+              {cameraSettings?.url && (
+                <Button
+                  variant="outline"
+                  onClick={handleClearCamera}
+                  disabled={cameraMutation.isPending}
+                  data-testid="button-clear-camera"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Remove Camera
+                </Button>
+              )}
+            </div>
+            
+            <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+              <h3 className="font-medium text-sm mb-2 text-blue-400">Common Camera URLs</h3>
+              <ul className="text-xs text-muted-foreground space-y-1">
+                <li><strong>Lorex:</strong> http://IP/cgi-bin/snapshot.cgi</li>
+                <li><strong>Wyze:</strong> Use RTSP via docker-wyze-bridge</li>
+                <li><strong>Generic ONVIF:</strong> http://IP/onvif-http/snapshot</li>
+                <li><strong>MJPEG stream:</strong> http://IP/video.mjpg (may work directly)</li>
+              </ul>
+            </div>
+          </div>
         </Card>
 
         <Card className="p-6 bg-secondary/20 border-border">

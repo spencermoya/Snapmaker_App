@@ -1239,6 +1239,112 @@ export async function registerRoutes(
     }
   });
 
+  // Camera settings endpoints
+  app.get("/api/settings/camera", async (req, res) => {
+    try {
+      const cameraUrl = await storage.getSetting("camera_url");
+      const cameraUsername = await storage.getSetting("camera_username");
+      const cameraPassword = await storage.getSetting("camera_password");
+      const cameraRefreshRate = await storage.getSetting("camera_refresh_rate");
+      const cameraStreamType = await storage.getSetting("camera_stream_type");
+      
+      res.json({
+        url: cameraUrl,
+        username: cameraUsername,
+        password: cameraPassword ? "***" : null,
+        refreshRate: cameraRefreshRate ? parseInt(cameraRefreshRate) : 1000,
+        streamType: cameraStreamType || "snapshot",
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get camera settings" });
+    }
+  });
+
+  app.put("/api/settings/camera", async (req, res) => {
+    try {
+      const { url, username, password, refreshRate, streamType, clearPassword } = req.body;
+      
+      await storage.setSetting("camera_url", url || null);
+      await storage.setSetting("camera_username", username || null);
+      
+      if (clearPassword) {
+        await storage.setSetting("camera_password", null);
+      } else if (password && password !== "***") {
+        await storage.setSetting("camera_password", password);
+      }
+      
+      await storage.setSetting("camera_refresh_rate", refreshRate ? String(refreshRate) : "1000");
+      await storage.setSetting("camera_stream_type", streamType || "snapshot");
+      
+      res.json({ success: true, message: "Camera settings saved" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save camera settings" });
+    }
+  });
+
+  // Camera stream proxy - fetches snapshot from camera and returns it
+  // Note: This is designed for local network use only. For security, validate URLs.
+  app.get("/api/camera/snapshot", async (req, res) => {
+    try {
+      const cameraUrl = await storage.getSetting("camera_url");
+      const cameraUsername = await storage.getSetting("camera_username");
+      const cameraPassword = await storage.getSetting("camera_password");
+      
+      if (!cameraUrl) {
+        return res.status(404).json({ error: "Camera not configured" });
+      }
+      
+      // Validate URL is HTTP/HTTPS and appears to be a LAN address
+      try {
+        const parsedUrl = new URL(cameraUrl);
+        if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+          return res.status(400).json({ error: "Only HTTP/HTTPS URLs allowed" });
+        }
+        
+        // Allow common LAN IP ranges and localhost
+        const hostname = parsedUrl.hostname;
+        const isLocalNetwork = 
+          hostname === "localhost" ||
+          hostname.startsWith("192.168.") ||
+          hostname.startsWith("10.") ||
+          hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) ||
+          hostname.endsWith(".local");
+          
+        if (!isLocalNetwork) {
+          console.warn(`[Camera] Blocked request to non-local URL: ${hostname}`);
+          return res.status(400).json({ error: "Only local network cameras allowed" });
+        }
+      } catch {
+        return res.status(400).json({ error: "Invalid camera URL" });
+      }
+      
+      const headers: Record<string, string> = {};
+      if (cameraUsername && cameraPassword) {
+        const auth = Buffer.from(`${cameraUsername}:${cameraPassword}`).toString("base64");
+        headers["Authorization"] = `Basic ${auth}`;
+      }
+      
+      const response = await fetch(cameraUrl, {
+        headers,
+        signal: AbortSignal.timeout(10000),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Camera returned ${response.status}`);
+      }
+      
+      const contentType = response.headers.get("content-type") || "image/jpeg";
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      
+      const buffer = await response.arrayBuffer();
+      res.send(Buffer.from(buffer));
+    } catch (error) {
+      console.error("[Camera] Snapshot error:", error);
+      res.status(502).json({ error: "Failed to fetch camera snapshot" });
+    }
+  });
+
   // Push notification endpoints
   app.get("/api/push/vapid-public-key", (req, res) => {
     const key = getVapidPublicKey();

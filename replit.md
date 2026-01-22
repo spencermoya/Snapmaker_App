@@ -84,6 +84,13 @@ shared/           # Shared code between frontend/backend
   - Uses `server/pushService.ts` for sending notifications and `push_subscriptions` database table
   - Service worker handles push events in `client/public/sw.js`
   - iOS PWA requirements: iOS 16.4+, HTTPS, app installed to home screen, user permission granted
+- **IP Camera integration**: Connect any IP camera via snapshot URL for live print monitoring
+  - Supports HTTP Basic Auth for cameras requiring credentials
+  - Configurable refresh rate (default 1000ms = 1 fps)
+  - Full 4K resolution display with fullscreen mode
+  - Server-side proxy prevents CORS issues and adds security (LAN-only URLs allowed)
+  - Camera settings stored in appSettings table (camera_url, camera_username, camera_password, camera_refresh_rate)
+  - Common URL formats: Lorex `http://IP/cgi-bin/snapshot.cgi`, ONVIF `http://IP/onvif-http/snapshot`
 
 ### UI Libraries
 - **Radix UI**: Headless component primitives for accessibility
