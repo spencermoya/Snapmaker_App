@@ -117,19 +117,21 @@ export default function Settings() {
     }
   }, [cameraSettings]);
 
+  const saveCameraSettings = async (data: { url: string; rtspUrl?: string; username: string; password: string; refreshRate: number; clearPassword?: boolean }) => {
+    const response = await fetch("/api/settings/camera", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error("Failed to save camera settings");
+    queryClient.invalidateQueries({ queryKey: ["/api/settings/camera"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/stream/status"] });
+    return response.json();
+  };
+  
   const cameraMutation = useMutation({
-    mutationFn: async (data: { url: string; rtspUrl?: string; username: string; password: string; refreshRate: number; clearPassword?: boolean }) => {
-      const response = await fetch("/api/settings/camera", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) throw new Error("Failed to save camera settings");
-      return response.json();
-    },
+    mutationFn: saveCameraSettings,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/settings/camera"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/stream/status"] });
       toast.success("Camera settings saved");
     },
     onError: () => {
@@ -215,14 +217,18 @@ export default function Settings() {
         const data = await response.json();
         
         if (response.ok && data.success) {
-          setCameraDetectedBrand(data.brand);
-          toast.success(`Connected to ${data.brand} camera!`);
-          cameraMutation.mutate({
-            url: data.url,
-            username: cameraUsername,
-            password: cameraPassword,
-            refreshRate: 1000,
-          });
+          try {
+            await saveCameraSettings({
+              url: data.url,
+              username: cameraUsername,
+              password: cameraPassword,
+              refreshRate: 1000,
+            });
+            setCameraDetectedBrand(data.brand);
+            toast.success(`Connected to ${data.brand} camera!`);
+          } catch {
+            toast.error("Failed to save camera settings");
+          }
         } else {
           setCameraPreviewError(data.error || "Could not detect camera. Try selecting your camera brand manually.");
         }
@@ -244,15 +250,22 @@ export default function Settings() {
           });
           
           if (streamResponse.ok) {
-            setCameraDetectedBrand(selectedBrand.name);
-            toast.success(`Connected to ${selectedBrand.name} camera with live streaming!`);
-            cameraMutation.mutate({
-              url: "",
-              rtspUrl: rtspUrl,
-              username: cameraUsername,
-              password: cameraPassword,
-              refreshRate: 1000,
-            });
+            // Save settings first, then show success
+            try {
+              await saveCameraSettings({
+                url: "",
+                rtspUrl: rtspUrl,
+                username: cameraUsername,
+                password: cameraPassword,
+                refreshRate: 1000,
+              });
+              setCameraDetectedBrand(selectedBrand.name);
+              toast.success(`Connected to ${selectedBrand.name} camera with live streaming!`);
+            } catch {
+              toast.error("Failed to save camera settings");
+              // Stop the stream if we couldn't save
+              await fetch("/api/stream/stop", { method: "POST" });
+            }
             setCameraConnecting(false);
             return;
           }
@@ -261,14 +274,18 @@ export default function Settings() {
         // Fall back to snapshot mode
         if (selectedBrand.snapshot) {
           const snapshotUrl = `http://${cameraIp}${selectedBrand.snapshot}`;
-          setCameraDetectedBrand(selectedBrand.name);
-          toast.success(`Connected to ${selectedBrand.name} camera!`);
-          cameraMutation.mutate({
-            url: snapshotUrl,
-            username: cameraUsername,
-            password: cameraPassword,
-            refreshRate: 1000,
-          });
+          try {
+            await saveCameraSettings({
+              url: snapshotUrl,
+              username: cameraUsername,
+              password: cameraPassword,
+              refreshRate: 1000,
+            });
+            setCameraDetectedBrand(selectedBrand.name);
+            toast.success(`Connected to ${selectedBrand.name} camera!`);
+          } catch {
+            toast.error("Failed to save camera settings");
+          }
         } else {
           setCameraPreviewError("Could not connect to camera. Please check your settings.");
         }
@@ -329,17 +346,20 @@ export default function Settings() {
       const data = await response.json();
       
       if (response.ok && data.success) {
-        setCameraUrl(data.url);
-        setCameraDetectedBrand(data.brand);
-        toast.success(data.message);
-        
-        // Auto-save the settings
-        cameraMutation.mutate({
-          url: data.url,
-          username: cameraUsername,
-          password: cameraPassword,
-          refreshRate: cameraRefreshRate,
-        });
+        // Save settings first, then show success
+        try {
+          await saveCameraSettings({
+            url: data.url,
+            username: cameraUsername,
+            password: cameraPassword,
+            refreshRate: cameraRefreshRate,
+          });
+          setCameraUrl(data.url);
+          setCameraDetectedBrand(data.brand);
+          toast.success(data.message);
+        } catch {
+          toast.error("Failed to save camera settings");
+        }
       } else {
         toast.error(data.error || "Could not detect camera");
         setShowAdvancedCamera(true);
