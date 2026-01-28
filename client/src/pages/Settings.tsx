@@ -238,10 +238,12 @@ export default function Settings() {
           ? `${cameraUsername}:${cameraPassword}@` 
           : (cameraUsername ? `${cameraUsername}@` : "");
         
+        // Build both URLs - save both so dashboard can fallback if RTSP fails
+        const snapshotUrl = selectedBrand.snapshot ? `http://${cameraIp}${selectedBrand.snapshot}` : "";
+        const rtspUrl = selectedBrand.rtsp ? `rtsp://${authPart}${cameraIp}:554${selectedBrand.rtsp}` : "";
+        
         // Try RTSP first for live streaming
-        if (selectedBrand.rtsp) {
-          const rtspUrl = `rtsp://${authPart}${cameraIp}:554${selectedBrand.rtsp}`;
-          
+        if (rtspUrl) {
           // Start RTSP stream
           const streamResponse = await fetch("/api/stream/start", {
             method: "POST",
@@ -250,10 +252,10 @@ export default function Settings() {
           });
           
           if (streamResponse.ok) {
-            // Save settings first, then show success
+            // Save BOTH URLs so dashboard can fallback to snapshot if RTSP fails
             try {
               await saveCameraSettings({
-                url: "",
+                url: snapshotUrl, // Save snapshot URL for fallback
                 rtspUrl: rtspUrl,
                 username: cameraUsername,
                 password: cameraPassword,
@@ -271,12 +273,12 @@ export default function Settings() {
           }
         }
         
-        // Fall back to snapshot mode
-        if (selectedBrand.snapshot) {
-          const snapshotUrl = `http://${cameraIp}${selectedBrand.snapshot}`;
+        // Fall back to snapshot mode (RTSP failed or not available)
+        if (snapshotUrl) {
           try {
             await saveCameraSettings({
               url: snapshotUrl,
+              rtspUrl: "", // Clear RTSP since it didn't work
               username: cameraUsername,
               password: cameraPassword,
               refreshRate: 1000,

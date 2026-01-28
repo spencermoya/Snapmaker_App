@@ -27,6 +27,7 @@ export default function WebcamFeed() {
   const [hasError, setHasError] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [streamLoading, setStreamLoading] = useState(false);
+  const [rtspFailed, setRtspFailed] = useState(false); // Track if RTSP failed so we can fallback
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -45,7 +46,9 @@ export default function WebcamFeed() {
   });
 
   const isConfigured = cameraSettings?.url || cameraSettings?.rtspUrl;
-  const isRtspMode = !!cameraSettings?.rtspUrl;
+  const hasSnapshotFallback = !!cameraSettings?.url; // Can we fall back to snapshot?
+  // Use RTSP mode only if rtspUrl is set AND we haven't failed yet (or no snapshot fallback)
+  const isRtspMode = !!cameraSettings?.rtspUrl && (!rtspFailed || !hasSnapshotFallback);
   const isStreamRunning = streamStatus?.running;
 
   const startStreamMutation = useMutation({
@@ -75,6 +78,12 @@ export default function WebcamFeed() {
       refetchStreamStatus();
     },
   });
+
+  // Reset rtspFailed when camera settings change (user reconfigured camera)
+  useEffect(() => {
+    setRtspFailed(false);
+    setHasError(false);
+  }, [cameraSettings?.rtspUrl, cameraSettings?.url]);
 
   useEffect(() => {
     if (isRtspMode && cameraSettings?.rtspUrl && !isStreamRunning && !streamLoading) {
@@ -110,8 +119,16 @@ export default function WebcamFeed() {
       hls.on(Hls.Events.ERROR, (event, data) => {
         if (data.fatal) {
           console.error("[HLS] Fatal error:", data.type, data.details);
-          setHasError(true);
-          setIsLoading(false);
+          // If we have a snapshot URL fallback, use it instead of showing error
+          if (hasSnapshotFallback) {
+            console.log("[HLS] Falling back to snapshot mode");
+            setRtspFailed(true);
+            setHasError(false);
+            setIsLoading(true); // Will trigger snapshot fetch
+          } else {
+            setHasError(true);
+            setIsLoading(false);
+          }
         }
       });
 
@@ -182,7 +199,7 @@ export default function WebcamFeed() {
         URL.revokeObjectURL(imageSrc);
       }
     };
-  }, [isConfigured, isRtspMode, cameraSettings?.refreshRate]);
+  }, [isConfigured, isRtspMode, cameraSettings?.refreshRate, rtspFailed]);
 
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
@@ -237,6 +254,10 @@ export default function WebcamFeed() {
         {isRtspMode ? (
           <Badge variant="outline" className="bg-blue-500/50 text-white border-white/20 backdrop-blur-sm">
             STREAM
+          </Badge>
+        ) : rtspFailed ? (
+          <Badge variant="outline" className="bg-orange-500/50 text-white border-white/20 backdrop-blur-sm">
+            FALLBACK
           </Badge>
         ) : (
           <Badge variant="outline" className="bg-black/50 text-white border-white/20 backdrop-blur-sm">
