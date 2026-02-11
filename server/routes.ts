@@ -1258,6 +1258,7 @@ export async function registerRoutes(
     try {
       const cameraUrl = await storage.getSetting("camera_url");
       const cameraRtspUrl = await storage.getSetting("camera_rtsp_url");
+      const cameraMjpegUrl = await storage.getSetting("camera_mjpeg_url");
       const cameraUsername = await storage.getSetting("camera_username");
       const cameraPassword = await storage.getSetting("camera_password");
       const cameraRefreshRate = await storage.getSetting("camera_refresh_rate");
@@ -1266,10 +1267,11 @@ export async function registerRoutes(
       res.json({
         url: cameraUrl,
         rtspUrl: cameraRtspUrl,
+        mjpegUrl: cameraMjpegUrl,
         username: cameraUsername,
         password: cameraPassword ? "***" : null,
         refreshRate: cameraRefreshRate ? parseInt(cameraRefreshRate) : 1000,
-        streamType: cameraStreamType || "snapshot",
+        streamType: cameraStreamType || "mjpeg",
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to get camera settings" });
@@ -1278,10 +1280,11 @@ export async function registerRoutes(
 
   app.put("/api/settings/camera", async (req, res) => {
     try {
-      const { url, rtspUrl, username, password, refreshRate, streamType, clearPassword } = req.body;
+      const { url, rtspUrl, mjpegUrl, username, password, refreshRate, streamType, clearPassword } = req.body;
       
       await storage.setSetting("camera_url", url || null);
       await storage.setSetting("camera_rtsp_url", rtspUrl || null);
+      await storage.setSetting("camera_mjpeg_url", mjpegUrl || null);
       await storage.setSetting("camera_username", username || null);
       
       if (clearPassword) {
@@ -1498,6 +1501,89 @@ export async function registerRoutes(
       const errMsg = error instanceof Error ? error.message : "Unknown error";
       console.error("[Camera] Snapshot error:", errMsg);
       res.status(502).json({ error: `Failed to fetch camera snapshot: ${errMsg}` });
+    }
+  });
+
+  // MJPEG live stream proxy - streams continuous video from camera to browser
+  // This is the simplest and most reliable live view: no ffmpeg, no HLS conversion needed
+  // Lorex/Dahua cameras serve MJPEG at /cgi-bin/mjpg/video.cgi
+  app.get("/api/camera/mjpeg", async (req, res) => {
+    try {
+      const mjpegUrl = await storage.getSetting("camera_mjpeg_url");
+      const cameraUsername = await storage.getSetting("camera_username");
+      const cameraPassword = await storage.getSetting("camera_password");
+      
+      if (!mjpegUrl) {
+        return res.status(404).json({ error: "MJPEG stream not configured" });
+      }
+      
+      try {
+        const parsedUrl = new URL(mjpegUrl);
+        const hostname = parsedUrl.hostname;
+        const isLocalNetwork = 
+          hostname === "localhost" ||
+          hostname.startsWith("192.168.") ||
+          hostname.startsWith("10.") ||
+          hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) ||
+          hostname.endsWith(".local");
+          
+        if (!isLocalNetwork) {
+          return res.status(400).json({ error: "Only local network cameras allowed" });
+        }
+      } catch {
+        return res.status(400).json({ error: "Invalid MJPEG URL" });
+      }
+      
+      console.log(`[Camera] Starting MJPEG proxy stream from: ${mjpegUrl}`);
+      
+      const response = await fetchWithAuth(mjpegUrl, cameraUsername, cameraPassword, {
+        timeout: 15000,
+      });
+      
+      if (!response.ok) {
+        console.error(`[Camera] MJPEG stream failed: HTTP ${response.status}`);
+        return res.status(502).json({ error: `Camera returned HTTP ${response.status}` });
+      }
+      
+      const contentType = response.headers.get("content-type") || "multipart/x-mixed-replace";
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Connection", "keep-alive");
+      
+      if (response.body) {
+        const reader = response.body.getReader();
+        
+        const pump = async () => {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              if (res.writableEnded) break;
+              res.write(Buffer.from(value));
+            }
+          } catch (err) {
+            // Client disconnected or stream ended - this is normal
+          } finally {
+            try { reader.cancel(); } catch {}
+            if (!res.writableEnded) res.end();
+          }
+        };
+        
+        req.on("close", () => {
+          console.log("[Camera] MJPEG client disconnected");
+          try { reader.cancel(); } catch {}
+        });
+        
+        pump();
+      } else {
+        res.status(502).json({ error: "No stream body from camera" });
+      }
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : "Unknown error";
+      console.error("[Camera] MJPEG stream error:", errMsg);
+      if (!res.headersSent) {
+        res.status(502).json({ error: `MJPEG stream failed: ${errMsg}` });
+      }
     }
   });
 

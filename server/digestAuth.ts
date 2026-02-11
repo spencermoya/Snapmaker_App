@@ -51,6 +51,22 @@ export function buildDigestAuthHeader(
   return header;
 }
 
+const authCache: Map<string, { method: "basic" | "digest"; challenge?: Record<string, string>; timestamp: number }> = new Map();
+const AUTH_CACHE_TTL = 5 * 60 * 1000;
+
+function getCachedAuth(host: string) {
+  const cached = authCache.get(host);
+  if (cached && (Date.now() - cached.timestamp) < AUTH_CACHE_TTL) {
+    return cached;
+  }
+  authCache.delete(host);
+  return null;
+}
+
+function cacheAuth(host: string, method: "basic" | "digest", challenge?: Record<string, string>) {
+  authCache.set(host, { method, challenge, timestamp: Date.now() });
+}
+
 export async function fetchWithDigestAuth(
   url: string,
   username: string,
@@ -120,35 +136,77 @@ export async function fetchWithAuth(
     });
   }
 
-  const basicAuth = Buffer.from(`${username}:${password}`).toString("base64");
-  const basicResponse = await fetch(url, {
-    method,
-    headers: {
-      ...extraHeaders,
-      Authorization: `Basic ${basicAuth}`,
-    },
-    signal: AbortSignal.timeout(timeout),
-  });
+  const parsedUrl = new URL(url);
+  const host = parsedUrl.host;
+  const uri = parsedUrl.pathname + parsedUrl.search;
 
-  if (basicResponse.status === 401) {
-    const wwwAuth = basicResponse.headers.get("www-authenticate") || "";
+  const cached = getCachedAuth(host);
+
+  if (cached?.method === "digest" && cached.challenge) {
+    const authHeader = buildDigestAuthHeader(cached.challenge, username, password, method, uri);
+    const response = await fetch(url, {
+      method,
+      headers: { ...extraHeaders, Authorization: authHeader },
+      signal: AbortSignal.timeout(timeout),
+    });
+
+    if (response.status !== 401) {
+      return response;
+    }
+
+    const wwwAuth = response.headers.get("www-authenticate") || "";
     if (wwwAuth.toLowerCase().startsWith("digest")) {
-      console.log("[Camera] Basic auth rejected, trying Digest auth...");
-      const challenge = parseDigestChallenge(wwwAuth);
-      const parsedUrl = new URL(url);
-      const uri = parsedUrl.pathname + parsedUrl.search;
-      const authHeader = buildDigestAuthHeader(challenge, username, password, method, uri);
-
+      const newChallenge = parseDigestChallenge(wwwAuth);
+      cacheAuth(host, "digest", newChallenge);
+      const newAuthHeader = buildDigestAuthHeader(newChallenge, username, password, method, uri);
       return fetch(url, {
         method,
-        headers: {
-          ...extraHeaders,
-          Authorization: authHeader,
-        },
+        headers: { ...extraHeaders, Authorization: newAuthHeader },
         signal: AbortSignal.timeout(timeout),
       });
     }
+    authCache.delete(host);
   }
 
-  return basicResponse;
+  if (cached?.method === "basic") {
+    const basicAuth = Buffer.from(`${username}:${password}`).toString("base64");
+    return fetch(url, {
+      method,
+      headers: { ...extraHeaders, Authorization: `Basic ${basicAuth}` },
+      signal: AbortSignal.timeout(timeout),
+    });
+  }
+
+  const noAuthResponse = await fetch(url, {
+    method,
+    headers: extraHeaders,
+    signal: AbortSignal.timeout(timeout),
+  });
+
+  if (noAuthResponse.status !== 401) {
+    return noAuthResponse;
+  }
+
+  const wwwAuth = noAuthResponse.headers.get("www-authenticate") || "";
+
+  if (wwwAuth.toLowerCase().startsWith("digest")) {
+    console.log(`[Auth] Camera at ${host} requires Digest auth, caching for future requests`);
+    const challenge = parseDigestChallenge(wwwAuth);
+    cacheAuth(host, "digest", challenge);
+    const authHeader = buildDigestAuthHeader(challenge, username, password, method, uri);
+    return fetch(url, {
+      method,
+      headers: { ...extraHeaders, Authorization: authHeader },
+      signal: AbortSignal.timeout(timeout),
+    });
+  }
+
+  console.log(`[Auth] Camera at ${host} trying Basic auth, caching for future requests`);
+  cacheAuth(host, "basic");
+  const basicAuth = Buffer.from(`${username}:${password}`).toString("base64");
+  return fetch(url, {
+    method,
+    headers: { ...extraHeaders, Authorization: `Basic ${basicAuth}` },
+    signal: AbortSignal.timeout(timeout),
+  });
 }

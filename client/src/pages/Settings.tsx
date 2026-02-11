@@ -36,6 +36,8 @@ interface PushStatus {
 
 interface CameraSettings {
   url: string | null;
+  rtspUrl: string | null;
+  mjpegUrl: string | null;
   username: string | null;
   password: string | null;
   refreshRate: number;
@@ -66,20 +68,21 @@ export default function Settings() {
   const [cameraConnecting, setCameraConnecting] = useState(false);
   const [cameraDetectedBrand, setCameraDetectedBrand] = useState<string | null>(null);
   const [showAdvancedCamera, setShowAdvancedCamera] = useState(false);
-  const [cameraMode, setCameraMode] = useState<"snapshot" | "rtsp">("snapshot");
+  const [cameraMode, setCameraMode] = useState<"mjpeg" | "snapshot" | "rtsp">("mjpeg");
+  const [cameraMjpegUrl, setCameraMjpegUrl] = useState("");
   const [cameraBrand, setCameraBrand] = useState<string>("auto");
   const [cameraPreviewUrl, setCameraPreviewUrl] = useState<string | null>(null);
   const [cameraPreviewError, setCameraPreviewError] = useState<string | null>(null);
 
   const CAMERA_BRANDS = [
-    { id: "auto", name: "Auto-Detect", rtsp: "", snapshot: "" },
-    { id: "lorex", name: "Lorex / Dahua", rtsp: "/cam/realmonitor?channel=1&subtype=1", snapshot: "/cgi-bin/snapshot.cgi" },
-    { id: "hikvision", name: "Hikvision", rtsp: "/Streaming/channels/101", snapshot: "/ISAPI/Streaming/channels/1/picture" },
-    { id: "reolink", name: "Reolink", rtsp: "/h264Preview_01_main", snapshot: "/cgi-bin/api.cgi?cmd=Snap&channel=0" },
-    { id: "amcrest", name: "Amcrest", rtsp: "/cam/realmonitor?channel=1&subtype=1", snapshot: "/cgi-bin/snapshot.cgi" },
-    { id: "axis", name: "Axis", rtsp: "/axis-media/media.amp", snapshot: "/axis-cgi/jpg/image.cgi" },
-    { id: "onvif", name: "ONVIF Generic", rtsp: "/stream1", snapshot: "/onvif-http/snapshot" },
-    { id: "wyze", name: "Wyze (via RTSP firmware)", rtsp: "/live", snapshot: "" },
+    { id: "auto", name: "Auto-Detect", rtsp: "", snapshot: "", mjpeg: "" },
+    { id: "lorex", name: "Lorex / Dahua", rtsp: "/cam/realmonitor?channel=1&subtype=1", snapshot: "/cgi-bin/snapshot.cgi", mjpeg: "/cgi-bin/mjpg/video.cgi?channel=1&subtype=1" },
+    { id: "hikvision", name: "Hikvision", rtsp: "/Streaming/channels/101", snapshot: "/ISAPI/Streaming/channels/1/picture", mjpeg: "/ISAPI/Streaming/channels/102/httpPreview" },
+    { id: "reolink", name: "Reolink", rtsp: "/h264Preview_01_main", snapshot: "/cgi-bin/api.cgi?cmd=Snap&channel=0", mjpeg: "" },
+    { id: "amcrest", name: "Amcrest", rtsp: "/cam/realmonitor?channel=1&subtype=1", snapshot: "/cgi-bin/snapshot.cgi", mjpeg: "/cgi-bin/mjpg/video.cgi?channel=1&subtype=1" },
+    { id: "axis", name: "Axis", rtsp: "/axis-media/media.amp", snapshot: "/axis-cgi/jpg/image.cgi", mjpeg: "/axis-cgi/mjpg/video.cgi" },
+    { id: "onvif", name: "ONVIF Generic", rtsp: "/stream1", snapshot: "/onvif-http/snapshot", mjpeg: "" },
+    { id: "wyze", name: "Wyze (via RTSP firmware)", rtsp: "/live", snapshot: "", mjpeg: "" },
   ];
 
   const { data: pushStatus } = useQuery<PushStatus>({
@@ -95,20 +98,25 @@ export default function Settings() {
   useEffect(() => {
     if (cameraSettings) {
       setCameraUrl(cameraSettings.url || "");
-      setCameraRtspUrl((cameraSettings as any).rtspUrl || "");
+      setCameraRtspUrl(cameraSettings.rtspUrl || "");
+      setCameraMjpegUrl(cameraSettings.mjpegUrl || "");
       setCameraUsername(cameraSettings.username || "");
       setCameraPassword(cameraSettings.password === "***" ? "" : (cameraSettings.password || ""));
       setCameraRefreshRate(cameraSettings.refreshRate || 1000);
-      // Set camera mode based on what's configured
-      if ((cameraSettings as any).rtspUrl) {
+      const st = cameraSettings.streamType;
+      if (st === "mjpeg" || st === "rtsp" || st === "snapshot") {
+        setCameraMode(st);
+      } else if (cameraSettings.mjpegUrl) {
+        setCameraMode("mjpeg");
+      } else if (cameraSettings.rtspUrl) {
         setCameraMode("rtsp");
       } else if (cameraSettings.url) {
         setCameraMode("snapshot");
       }
-      // Extract IP from existing URL if present
-      if (cameraSettings.url) {
+      const urlToParse = cameraSettings.mjpegUrl || cameraSettings.url || cameraSettings.rtspUrl;
+      if (urlToParse) {
         try {
-          const parsedUrl = new URL(cameraSettings.url);
+          const parsedUrl = new URL(urlToParse);
           setCameraIp(parsedUrl.hostname);
         } catch {
           setCameraIp("");
@@ -117,7 +125,7 @@ export default function Settings() {
     }
   }, [cameraSettings]);
 
-  const saveCameraSettings = async (data: { url: string; rtspUrl?: string; username: string; password: string; refreshRate: number; clearPassword?: boolean }) => {
+  const saveCameraSettings = async (data: { url: string; rtspUrl?: string; mjpegUrl?: string; username: string; password: string; refreshRate: number; streamType?: string; clearPassword?: boolean }) => {
     const response = await fetch("/api/settings/camera", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -141,25 +149,13 @@ export default function Settings() {
 
   const handleSaveCameraSettings = () => {
     cameraMutation.mutate({
-      url: cameraMode === "snapshot" ? cameraUrl : "",
-      rtspUrl: cameraMode === "rtsp" ? cameraRtspUrl : "",
+      url: cameraUrl || "",
+      rtspUrl: cameraRtspUrl || "",
+      mjpegUrl: cameraMjpegUrl || "",
       username: cameraUsername,
       password: cameraPassword,
       refreshRate: cameraRefreshRate,
-    });
-  };
-
-  const handleSaveRtspSettings = () => {
-    if (!cameraRtspUrl) {
-      toast.error("Please enter an RTSP URL");
-      return;
-    }
-    cameraMutation.mutate({
-      url: "",
-      rtspUrl: cameraRtspUrl,
-      username: cameraUsername,
-      password: cameraPassword,
-      refreshRate: cameraRefreshRate,
+      streamType: cameraMode,
     });
   };
 
@@ -174,19 +170,22 @@ export default function Settings() {
     cameraMutation.mutate({
       url: "",
       rtspUrl: "",
+      mjpegUrl: "",
       username: "",
       password: "",
       refreshRate: 1000,
+      streamType: "mjpeg",
       clearPassword: true,
     });
     setCameraUrl("");
     setCameraRtspUrl("");
+    setCameraMjpegUrl("");
     setCameraIp("");
     setCameraUsername("");
     setCameraPassword("");
     setCameraRefreshRate(1000);
     setCameraDetectedBrand(null);
-    setCameraMode("snapshot");
+    setCameraMode("mjpeg");
   };
 
   const handleSmartConnect = async () => {
@@ -239,21 +238,28 @@ export default function Settings() {
         
         const snapshotUrl = selectedBrand.snapshot ? `http://${cameraIp}${selectedBrand.snapshot}` : "";
         const rtspUrl = selectedBrand.rtsp ? `rtsp://${authPart}${cameraIp}:554${selectedBrand.rtsp}` : "";
+        const mjpegUrl = selectedBrand.mjpeg ? `http://${cameraIp}${selectedBrand.mjpeg}` : "";
+        
+        const defaultStreamType = mjpegUrl ? "mjpeg" : (snapshotUrl ? "snapshot" : "rtsp");
         
         console.log(`[Camera] Brand selected: ${selectedBrand.name}, saving settings directly`);
+        console.log(`[Camera] MJPEG URL: ${mjpegUrl}`);
         console.log(`[Camera] Snapshot URL: ${snapshotUrl}`);
         console.log(`[Camera] RTSP URL: ${rtspUrl}`);
+        console.log(`[Camera] Stream type: ${defaultStreamType}`);
         
         try {
           await saveCameraSettings({
             url: snapshotUrl,
             rtspUrl: rtspUrl,
+            mjpegUrl: mjpegUrl,
             username: cameraUsername,
             password: cameraPassword,
             refreshRate: 1000,
+            streamType: defaultStreamType,
           });
           setCameraDetectedBrand(selectedBrand.name);
-          toast.success(`${selectedBrand.name} camera settings saved! Check the dashboard for the live feed.`);
+          toast.success(`${selectedBrand.name} camera saved! Check the dashboard for the live feed.`);
         } catch {
           toast.error("Failed to save camera settings");
         }

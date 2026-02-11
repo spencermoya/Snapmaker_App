@@ -84,9 +84,13 @@ shared/           # Shared code between frontend/backend
   - Uses `server/pushService.ts` for sending notifications and `push_subscriptions` database table
   - Service worker handles push events in `client/public/sw.js`
   - iOS PWA requirements: iOS 16.4+, HTTPS, app installed to home screen, user permission granted
-- **IP Camera integration**: Connect any IP camera via snapshot URL for live print monitoring
+- **IP Camera integration**: Connect any IP camera for live print monitoring with three streaming modes:
+  - **MJPEG live stream** (primary, default): Uses camera's built-in MJPEG stream (`/cgi-bin/mjpg/video.cgi`). No ffmpeg needed. Server proxies the stream with auth handling. Most reliable method.
+  - **Snapshot polling** (fallback): Fetches JPEG snapshots at configurable intervals. Works with any camera that has a snapshot URL.
+  - **RTSP/HLS streaming** (optional): Converts RTSP to HLS via ffmpeg for browsers. Higher quality but more CPU-intensive.
   - Auto-detect feature: Enter just the camera's IP address and the app tries common URL patterns for Lorex, Hikvision, Dahua, ONVIF, Reolink, Axis, Amcrest, and generic cameras
-  - Supports HTTP Basic Auth for cameras requiring credentials
+  - Supports HTTP Basic and Digest Auth (Lorex/Dahua cameras use Digest) with automatic detection and caching
+  - Auth method is cached per camera host to avoid double requests on every frame
   - Configurable refresh rate (default 1000ms = 1 fps)
   - Full 4K resolution display with fullscreen mode
   - Server-side proxy prevents CORS issues and adds security (LAN-only URLs allowed, strict IP validation)
