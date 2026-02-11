@@ -85,9 +85,10 @@ shared/           # Shared code between frontend/backend
   - Service worker handles push events in `client/public/sw.js`
   - iOS PWA requirements: iOS 16.4+, HTTPS, app installed to home screen, user permission granted
 - **IP Camera integration**: Connect any IP camera for live print monitoring with three streaming modes:
-  - **MJPEG live stream** (primary, default): Uses camera's built-in MJPEG stream (`/cgi-bin/mjpg/video.cgi`). No ffmpeg needed. Server proxies the stream with auth handling. Most reliable method.
-  - **Snapshot polling** (fallback): Fetches JPEG snapshots at configurable intervals. Works with any camera that has a snapshot URL.
+  - **Snapshot polling** (primary, default for Lorex/Dahua): Fetches JPEG snapshots at configurable intervals via `/cgi-bin/snapshot.cgi` with Digest Auth. Most reliable method for Lorex cameras.
+  - **MJPEG live stream**: Uses camera's built-in MJPEG stream. No ffmpeg needed. Server proxies the stream with auth handling. Works well for Axis, Hikvision, and cameras that support it.
   - **RTSP/HLS streaming** (optional): Converts RTSP to HLS via ffmpeg for browsers. Higher quality but more CPU-intensive.
+  - **Auto-test on connect**: When connecting a camera, the app tests snapshot and MJPEG URLs before saving and auto-selects the best working mode. Shows detailed error messages if connection fails.
   - Auto-detect feature: Enter just the camera's IP address and the app tries common URL patterns for Lorex, Hikvision, Dahua, ONVIF, Reolink, Axis, Amcrest, and generic cameras
   - Supports HTTP Basic and Digest Auth (Lorex/Dahua cameras use Digest) with automatic detection and caching
   - Auth method is cached per camera host to avoid double requests on every frame
@@ -96,6 +97,7 @@ shared/           # Shared code between frontend/backend
   - Server-side proxy prevents CORS issues and adds security (LAN-only URLs allowed, strict IP validation)
   - Camera settings stored in appSettings table (camera_url, camera_username, camera_password, camera_refresh_rate)
   - Manual URL entry available in "Advanced options" if auto-detect fails
+  - Lorex cameras are Dahua OEM: primary protocol is RTSP on port 554, HTTP snapshots via `/cgi-bin/snapshot.cgi`, Digest Auth required. MJPEG over HTTP not reliably supported.
 
 ### UI Libraries
 - **Radix UI**: Headless component primitives for accessibility
