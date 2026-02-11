@@ -88,12 +88,13 @@ async function getPrinterStatus(printer: Printer): Promise<PrinterStatus | null>
       temperature: {
         nozzle: statusData.temperature?.nozzle || 0,
         bed: statusData.temperature?.bed || 0,
-        targetNozzle: statusData.temperature?.target_nozzle || 0,
-        targetBed: statusData.temperature?.target_bed || 0,
+        targetNozzle: statusData.temperature?.target_nozzle || statusData.temperature?.targetNozzle || 0,
+        targetBed: statusData.temperature?.target_bed || statusData.temperature?.targetBed || 0,
       },
       progress: statusData.progress || 0,
-      currentFile: statusData.current_file || null,
-      timeRemaining: statusData.time_remaining || null,
+      currentFile: statusData.currentFile || statusData.current_file || null,
+      timeRemaining: statusData.remainingTime || statusData.time_remaining || null,
+      elapsedTime: statusData.elapsedTime || statusData.elapsed_time || null,
     };
   } catch {
     return null;

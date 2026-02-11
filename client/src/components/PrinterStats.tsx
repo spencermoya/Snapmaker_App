@@ -20,6 +20,7 @@ interface PrinterStatsProps {
   progress?: number;
   currentFile?: string | null;
   timeRemaining?: number | null;
+  elapsedTime?: number | null;
 }
 
 function formatDuration(seconds: number): string {
@@ -69,17 +70,21 @@ function formatDate(dateStr: string | null): string {
   }
 }
 
-export default function PrinterStats({ printerId, isConnected = false, isPrinting = false, progress = 0, currentFile = null, timeRemaining = null }: PrinterStatsProps) {
-  const [elapsedTime, setElapsedTime] = useState(0);
+export default function PrinterStats({ printerId, isConnected = false, isPrinting = false, progress = 0, currentFile = null, timeRemaining = null, elapsedTime: elapsedTimeProp = null }: PrinterStatsProps) {
+  const [localElapsedTime, setLocalElapsedTime] = useState(0);
   
   const { data: stats, isLoading } = useQuery<PrinterStatsData>({
     queryKey: [`/api/printers/${printerId}/stats`],
     refetchInterval: isPrinting ? 5000 : 30000,
   });
 
+  // Use printer-reported elapsed time if available, otherwise fall back to local timer
+  const elapsedTime = elapsedTimeProp || localElapsedTime;
+
   useEffect(() => {
-    if (!isPrinting || !stats?.currentPrintStartTime) {
-      setElapsedTime(0);
+    // Only use local timer as fallback when printer doesn't report elapsed time
+    if (!isPrinting || !stats?.currentPrintStartTime || elapsedTimeProp) {
+      setLocalElapsedTime(0);
       return;
     }
 
@@ -87,14 +92,14 @@ export default function PrinterStats({ printerId, isConnected = false, isPrintin
     
     const updateElapsed = () => {
       const now = Date.now();
-      setElapsedTime(Math.floor((now - startTime) / 1000));
+      setLocalElapsedTime(Math.floor((now - startTime) / 1000));
     };
     
     updateElapsed();
     const interval = setInterval(updateElapsed, 1000);
     
     return () => clearInterval(interval);
-  }, [isPrinting, stats?.currentPrintStartTime]);
+  }, [isPrinting, stats?.currentPrintStartTime, elapsedTimeProp]);
 
   if (isLoading) {
     return (

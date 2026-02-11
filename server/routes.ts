@@ -341,6 +341,17 @@ export async function registerRoutes(
         lastSeen: new Date(),
       });
 
+      // Log raw API response for debugging field names
+      if (statusData.progress > 0 || statusData.elapsedTime || statusData.remainingTime) {
+        console.log(`[PrinterStatus] Raw API fields:`, JSON.stringify({
+          status: statusData.status, state: statusData.state,
+          progress: statusData.progress,
+          elapsedTime: statusData.elapsedTime, elapsed_time: statusData.elapsed_time,
+          remainingTime: statusData.remainingTime, time_remaining: statusData.time_remaining,
+          currentFile: statusData.currentFile, current_file: statusData.current_file,
+        }));
+      }
+
       // Filter out HTTP status codes - only use string states like "idle", "running", "paused"
       const rawState = statusData.status || statusData.state;
       const state = (typeof rawState === 'string' && !/^\d+$/.test(rawState)) ? rawState : "idle";
@@ -350,12 +361,13 @@ export async function registerRoutes(
         temperature: {
           nozzle: statusData.temperature?.nozzle || 0,
           bed: statusData.temperature?.bed || 0,
-          targetNozzle: statusData.temperature?.target_nozzle || 0,
-          targetBed: statusData.temperature?.target_bed || 0,
+          targetNozzle: statusData.temperature?.target_nozzle || statusData.temperature?.targetNozzle || 0,
+          targetBed: statusData.temperature?.target_bed || statusData.temperature?.targetBed || 0,
         },
         progress: statusData.progress || 0,
-        currentFile: statusData.current_file || null,
-        timeRemaining: statusData.time_remaining || null,
+        currentFile: statusData.currentFile || statusData.current_file || null,
+        timeRemaining: statusData.remainingTime || statusData.time_remaining || null,
+        elapsedTime: statusData.elapsedTime || statusData.elapsed_time || null,
       };
 
       res.json(status);

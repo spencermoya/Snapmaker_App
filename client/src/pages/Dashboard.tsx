@@ -513,6 +513,7 @@ export default function Dashboard() {
             progress={status?.progress || 0} 
             timeLeft={formatTimeRemaining(status?.timeRemaining || null)}
             timeRemainingSeconds={status?.timeRemaining}
+            elapsedTime={status?.elapsedTime ? formatTimeRemaining(status.elapsedTime) : undefined}
             filename={status?.currentFile || (isConnected ? "No active job" : "Printer offline")} 
           />
         );
@@ -537,6 +538,7 @@ export default function Dashboard() {
           progress={status?.progress || 0}
           currentFile={status?.currentFile}
           timeRemaining={status?.timeRemaining}
+          elapsedTime={status?.elapsedTime}
         />;
       case "jogControls":
         return <JogControls key={moduleId} printerId={selectedPrinter.id} disabled={!isConnected} />;

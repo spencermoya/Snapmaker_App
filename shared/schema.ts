@@ -140,4 +140,5 @@ export type PrinterStatus = {
   progress: number;
   currentFile: string | null;
   timeRemaining: number | null;
+  elapsedTime: number | null;
 };
