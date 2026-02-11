@@ -242,9 +242,45 @@ export default function Settings() {
         const snapshotUrl = selectedBrand.snapshot ? `http://${cameraIp}${selectedBrand.snapshot}` : "";
         const rtspUrl = selectedBrand.rtsp ? `rtsp://${authPart}${cameraIp}:554${selectedBrand.rtsp}` : "";
         
-        // Try RTSP first for live streaming
+        // Try snapshot first since it's more reliable and works immediately
+        if (snapshotUrl) {
+          // Test the snapshot URL before saving
+          const testResponse = await fetch("/api/camera/test", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              url: snapshotUrl,
+              username: cameraUsername,
+              password: cameraPassword,
+            }),
+          });
+          const testData = await testResponse.json();
+          
+          if (testData.success) {
+            try {
+              await saveCameraSettings({
+                url: snapshotUrl,
+                rtspUrl: rtspUrl, // Also save RTSP URL for optional live streaming later
+                username: cameraUsername,
+                password: cameraPassword,
+                refreshRate: 1000,
+              });
+              setCameraDetectedBrand(selectedBrand.name);
+              toast.success(`Connected to ${selectedBrand.name} camera!`);
+              setCameraConnecting(false);
+              return;
+            } catch {
+              toast.error("Failed to save camera settings");
+            }
+          } else {
+            // Snapshot test failed - show the specific error
+            console.log(`[Camera] Snapshot test failed for ${selectedBrand.name}: ${testData.error}`);
+            // Don't return yet - try RTSP next
+          }
+        }
+        
+        // Try RTSP if snapshot didn't work or wasn't available
         if (rtspUrl) {
-          // Start RTSP stream
           const streamResponse = await fetch("/api/stream/start", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -252,10 +288,9 @@ export default function Settings() {
           });
           
           if (streamResponse.ok) {
-            // Save BOTH URLs so dashboard can fallback to snapshot if RTSP fails
             try {
               await saveCameraSettings({
-                url: snapshotUrl, // Save snapshot URL for fallback
+                url: "",
                 rtspUrl: rtspUrl,
                 username: cameraUsername,
                 password: cameraPassword,
@@ -265,31 +300,18 @@ export default function Settings() {
               toast.success(`Connected to ${selectedBrand.name} camera with live streaming!`);
             } catch {
               toast.error("Failed to save camera settings");
-              // Stop the stream if we couldn't save
               await fetch("/api/stream/stop", { method: "POST" });
             }
             setCameraConnecting(false);
             return;
+          } else {
+            const errorData = await streamResponse.json().catch(() => ({}));
+            setCameraPreviewError(errorData.error || "Could not connect to camera stream.");
           }
         }
         
-        // Fall back to snapshot mode (RTSP failed or not available)
-        if (snapshotUrl) {
-          try {
-            await saveCameraSettings({
-              url: snapshotUrl,
-              rtspUrl: "", // Clear RTSP since it didn't work
-              username: cameraUsername,
-              password: cameraPassword,
-              refreshRate: 1000,
-            });
-            setCameraDetectedBrand(selectedBrand.name);
-            toast.success(`Connected to ${selectedBrand.name} camera!`);
-          } catch {
-            toast.error("Failed to save camera settings");
-          }
-        } else {
-          setCameraPreviewError("Could not connect to camera. Please check your settings.");
+        if (!rtspUrl) {
+          setCameraPreviewError("Could not connect to camera. Try checking the IP, username, and password.");
         }
       }
     } catch (error) {

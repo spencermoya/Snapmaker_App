@@ -9,6 +9,7 @@ import { startLubanProxy, stopLubanProxy, getLubanProxyStatus, initializeLubanPr
 import { extractThumbnail } from "./thumbnailExtractor";
 import { getVapidPublicKey, isPushEnabled } from "./pushService";
 import { startStream, stopStream, getStreamInfo, getHlsDirectory, playlistExists } from "./streamService";
+import { fetchWithAuth } from "./digestAuth";
 import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } from "@shared/schema";
 import { z } from "zod";
 
@@ -1303,6 +1304,54 @@ export async function registerRoutes(
     }
   });
 
+  // Camera test - verifies a snapshot URL works before saving
+  app.post("/api/camera/test", async (req, res) => {
+    try {
+      const { url, username, password } = req.body;
+      
+      if (!url) {
+        return res.status(400).json({ error: "URL is required" });
+      }
+      
+      try {
+        const parsedUrl = new URL(url);
+        const hostname = parsedUrl.hostname;
+        const isLocalNetwork = 
+          hostname === "localhost" ||
+          hostname.startsWith("192.168.") ||
+          hostname.startsWith("10.") ||
+          hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) ||
+          hostname.endsWith(".local");
+          
+        if (!isLocalNetwork) {
+          return res.status(400).json({ error: "Only local network cameras allowed" });
+        }
+      } catch {
+        return res.status(400).json({ error: "Invalid URL" });
+      }
+      
+      console.log(`[Camera] Testing snapshot URL: ${url}`);
+      const response = await fetchWithAuth(url, username || null, password || null, {
+        timeout: 8000,
+      });
+      
+      if (response.ok) {
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("image")) {
+          res.json({ success: true, message: "Camera snapshot working" });
+        } else {
+          res.json({ success: false, error: `Camera returned ${contentType} instead of an image` });
+        }
+      } else {
+        res.json({ success: false, error: `Camera returned HTTP ${response.status}` });
+      }
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : "Unknown error";
+      console.error("[Camera] Test error:", errMsg);
+      res.json({ success: false, error: errMsg.includes("timeout") ? "Camera did not respond (timed out)" : errMsg });
+    }
+  });
+  
   // Camera auto-detect - tries common snapshot URL patterns to find what works
   app.post("/api/camera/detect", async (req, res) => {
     try {
@@ -1357,21 +1406,14 @@ export async function registerRoutes(
         { brand: "Generic MJPEG", path: "/cgi-bin/snapshot.cgi" },
       ];
       
-      const headers: Record<string, string> = {};
-      if (username && password) {
-        const auth = Buffer.from(`${username}:${password}`).toString("base64");
-        headers["Authorization"] = `Basic ${auth}`;
-      }
-      
       console.log(`[Camera] Auto-detecting camera at ${ip}...`);
       
-      // Try each pattern
+      // Try each pattern with both Basic and Digest auth
       for (const pattern of patterns) {
         const url = `http://${ip}${pattern.path}`;
         try {
-          const response = await fetch(url, {
-            headers,
-            signal: AbortSignal.timeout(5000),
+          const response = await fetchWithAuth(url, username || null, password || null, {
+            timeout: 5000,
           });
           
           if (response.ok) {
@@ -1394,7 +1436,7 @@ export async function registerRoutes(
       console.log(`[Camera] No working snapshot URL found for ${ip}`);
       res.status(404).json({ 
         error: "Could not detect camera. Make sure the IP is correct and the camera is accessible.",
-        suggestion: "If you know your camera's snapshot URL, you can enter it manually."
+        suggestion: "Try selecting your camera brand manually, or check that the username/password are correct."
       });
     } catch (error) {
       console.error("[Camera] Auto-detect error:", error);
@@ -1403,7 +1445,7 @@ export async function registerRoutes(
   });
 
   // Camera stream proxy - fetches snapshot from camera and returns it
-  // Note: This is designed for local network use only. For security, validate URLs.
+  // Supports both Basic and Digest authentication (Lorex/Dahua cameras use Digest)
   app.get("/api/camera/snapshot", async (req, res) => {
     try {
       const cameraUrl = await storage.getSetting("camera_url");
@@ -1421,7 +1463,6 @@ export async function registerRoutes(
           return res.status(400).json({ error: "Only HTTP/HTTPS URLs allowed" });
         }
         
-        // Allow common LAN IP ranges and localhost
         const hostname = parsedUrl.hostname;
         const isLocalNetwork = 
           hostname === "localhost" ||
@@ -1438,18 +1479,12 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid camera URL" });
       }
       
-      const headers: Record<string, string> = {};
-      if (cameraUsername && cameraPassword) {
-        const auth = Buffer.from(`${cameraUsername}:${cameraPassword}`).toString("base64");
-        headers["Authorization"] = `Basic ${auth}`;
-      }
-      
-      const response = await fetch(cameraUrl, {
-        headers,
-        signal: AbortSignal.timeout(10000),
+      const response = await fetchWithAuth(cameraUrl, cameraUsername, cameraPassword, {
+        timeout: 10000,
       });
       
       if (!response.ok) {
+        console.error(`[Camera] Snapshot failed: HTTP ${response.status} from ${cameraUrl}`);
         throw new Error(`Camera returned ${response.status}`);
       }
       
@@ -1460,8 +1495,9 @@ export async function registerRoutes(
       const buffer = await response.arrayBuffer();
       res.send(Buffer.from(buffer));
     } catch (error) {
-      console.error("[Camera] Snapshot error:", error);
-      res.status(502).json({ error: "Failed to fetch camera snapshot" });
+      const errMsg = error instanceof Error ? error.message : "Unknown error";
+      console.error("[Camera] Snapshot error:", errMsg);
+      res.status(502).json({ error: `Failed to fetch camera snapshot: ${errMsg}` });
     }
   });
 

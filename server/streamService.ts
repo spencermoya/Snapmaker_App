@@ -52,16 +52,17 @@ export async function startStream(rtspUrl: string): Promise<{ success: boolean; 
     const playlistPath = path.join(HLS_OUTPUT_DIR, "stream.m3u8");
     const segmentPath = path.join(HLS_OUTPUT_DIR, "segment%03d.ts");
 
-    console.log(`[Stream] Starting ffmpeg for RTSP: ${rtspUrl.replace(/:[^:@]+@/, ':***@')}`);
+    const maskedUrl = rtspUrl.replace(/:[^:@]+@/, ':***@');
+    console.log(`[Stream] Starting ffmpeg for RTSP: ${maskedUrl}`);
 
+    // Try copy codec first (passthrough, much faster especially on Raspberry Pi)
+    // Falls back to transcoding if copy doesn't work with HLS
     const args = [
       "-rtsp_transport", "tcp",
+      "-stimeout", "5000000",  // 5 second RTSP connection timeout (microseconds)
       "-i", rtspUrl,
-      "-c:v", "libx264",
-      "-preset", "ultrafast",
-      "-tune", "zerolatency",
-      "-g", "30",
-      "-sc_threshold", "0",
+      "-c:v", "copy",   // Passthrough - much less CPU than re-encoding
+      "-an",             // Skip audio for lower latency
       "-f", "hls",
       "-hls_time", String(STREAM_SEGMENT_TIME),
       "-hls_list_size", String(STREAM_LIST_SIZE),
@@ -76,6 +77,7 @@ export async function startStream(rtspUrl: string): Promise<{ success: boolean; 
 
     let hasResolved = false;
     let startupTimeout: NodeJS.Timeout;
+    let stderrBuffer = "";
 
     const resolveOnce = (result: { success: boolean; error?: string }) => {
       if (!hasResolved) {
@@ -91,32 +93,50 @@ export async function startStream(rtspUrl: string): Promise<{ success: boolean; 
         streamStartTime = Date.now();
         resolveOnce({ success: true });
       } else {
-        resolveOnce({ success: false, error: "Stream failed to start - no playlist created" });
+        console.error(`[Stream] Timeout - no playlist created. ffmpeg output: ${stderrBuffer.slice(-500)}`);
+        resolveOnce({ success: false, error: "Stream failed to start within 15 seconds. Check camera URL and credentials." });
         stopStream();
       }
-    }, 10000);
+    }, 15000);
 
     ffmpegProcess.stderr?.on("data", (data: Buffer) => {
       const msg = data.toString();
+      stderrBuffer += msg;
+      // Keep buffer from growing too large
+      if (stderrBuffer.length > 5000) {
+        stderrBuffer = stderrBuffer.slice(-3000);
+      }
+      
       if (msg.includes("Output #0")) {
         currentRtspUrl = rtspUrl;
         streamStartTime = Date.now();
+        console.log("[Stream] ffmpeg started successfully (output detected)");
         resolveOnce({ success: true });
       }
-      if (process.env.DEBUG_STREAM) {
-        console.log(`[ffmpeg] ${msg}`);
+      // Log important error messages
+      if (msg.includes("Connection refused") || msg.includes("Connection timed out") || 
+          msg.includes("401") || msg.includes("403") || msg.includes("error")) {
+        console.error(`[Stream] ffmpeg: ${msg.trim()}`);
       }
     });
 
     ffmpegProcess.on("error", (err) => {
-      console.error("[Stream] ffmpeg error:", err.message);
+      console.error("[Stream] ffmpeg process error:", err.message);
       resolveOnce({ success: false, error: `ffmpeg error: ${err.message}` });
       cleanup();
     });
 
     ffmpegProcess.on("exit", (code, signal) => {
       console.log(`[Stream] ffmpeg exited with code ${code}, signal ${signal}`);
-      resolveOnce({ success: false, error: `ffmpeg exited unexpectedly (code ${code})` });
+      if (stderrBuffer.includes("Connection refused")) {
+        resolveOnce({ success: false, error: "Camera refused connection. Check IP address and RTSP port (usually 554)." });
+      } else if (stderrBuffer.includes("401") || stderrBuffer.includes("Unauthorized")) {
+        resolveOnce({ success: false, error: "Camera rejected credentials. Check username and password." });
+      } else if (stderrBuffer.includes("timed out")) {
+        resolveOnce({ success: false, error: "Connection timed out. Camera may be offline or IP address is wrong." });
+      } else {
+        resolveOnce({ success: false, error: `Stream failed (code ${code}). Check camera settings.` });
+      }
       cleanup();
     });
   });

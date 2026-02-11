@@ -283,7 +283,8 @@ export default function WebcamFeed() {
       ) : hasError ? (
         <div className="w-full h-full flex flex-col items-center justify-center min-h-[200px] text-muted-foreground">
           <WifiOff className="h-12 w-12 mb-2" />
-          <p className="text-sm">Camera unavailable</p>
+          <p className="text-sm font-medium">Camera unavailable</p>
+          <p className="text-xs mt-1 text-muted-foreground/60">Check Settings to verify camera IP and credentials</p>
         </div>
       ) : isRtspMode ? (
         <video 
