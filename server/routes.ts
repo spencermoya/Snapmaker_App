@@ -1314,51 +1314,114 @@ export async function registerRoutes(
     }
   });
 
-  // Camera test - verifies a snapshot URL works before saving
   app.post("/api/camera/test", async (req, res) => {
     try {
-      const { url, username, password } = req.body;
+      const { ip, snapshotUrl, mjpegUrl, username, password } = req.body;
       
-      if (!url) {
-        return res.status(400).json({ error: "URL is required" });
+      if (!ip && !snapshotUrl && !mjpegUrl) {
+        return res.status(400).json({ error: "IP address or URL is required" });
       }
-      
-      try {
-        const parsedUrl = new URL(url);
-        const hostname = parsedUrl.hostname;
-        const isLocalNetwork = 
-          hostname === "localhost" ||
-          hostname.startsWith("192.168.") ||
-          hostname.startsWith("10.") ||
-          hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) ||
-          hostname.endsWith(".local");
+
+      const validateLocalUrl = (url: string): boolean => {
+        try {
+          const parsedUrl = new URL(url);
+          const hostname = parsedUrl.hostname;
+          return hostname === "localhost" ||
+            hostname.startsWith("192.168.") ||
+            hostname.startsWith("10.") ||
+            !!hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) ||
+            hostname.endsWith(".local");
+        } catch {
+          return false;
+        }
+      };
+
+      const testUrl = async (url: string, label: string): Promise<{ url: string; label: string; success: boolean; contentType?: string; error?: string; status?: number }> => {
+        if (!url) return { url, label, success: false, error: "No URL provided" };
+        if (!validateLocalUrl(url)) return { url, label, success: false, error: "Not a local network address" };
+        
+        try {
+          console.log(`[Camera Test] Testing ${label}: ${url}`);
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 8000);
           
-        if (!isLocalNetwork) {
-          return res.status(400).json({ error: "Only local network cameras allowed" });
+          const response = await fetchWithAuth(url, username || null, password || null, {
+            signal: controller.signal,
+          });
+          clearTimeout(timeout);
+          
+          const contentType = response.headers.get("content-type") || "";
+          
+          if (!response.ok) {
+            const statusText = response.status === 401 ? "Authentication failed - check username/password" :
+              response.status === 403 ? "Access forbidden" :
+              response.status === 404 ? "URL not found on camera" :
+              `HTTP ${response.status}`;
+            console.log(`[Camera Test] ${label} FAILED: ${statusText}`);
+            return { url, label, success: false, error: statusText, status: response.status };
+          }
+          
+          if (label === "snapshot" && !contentType.includes("image")) {
+            console.log(`[Camera Test] ${label} returned wrong content type: ${contentType}`);
+            return { url, label, success: false, error: `Expected image, got ${contentType}` };
+          }
+          
+          if (label === "mjpeg" && !contentType.includes("multipart") && !contentType.includes("image") && !contentType.includes("video")) {
+            console.log(`[Camera Test] ${label} returned wrong content type: ${contentType}`);
+            return { url, label, success: false, error: `Expected stream, got ${contentType}` };
+          }
+          
+          try { response.body?.cancel(); } catch {}
+          
+          console.log(`[Camera Test] ${label} OK (${contentType})`);
+          return { url, label, success: true, contentType };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : "Unknown error";
+          const friendlyMsg = errMsg.includes("abort") || errMsg.includes("timeout") ? "Camera did not respond (timed out after 8s)" :
+            errMsg.includes("ECONNREFUSED") ? "Connection refused - camera may be offline or wrong IP" :
+            errMsg.includes("EHOSTUNREACH") ? "Camera unreachable - check if it's on your network" :
+            errMsg.includes("ENOTFOUND") ? "IP address not found on network" :
+            errMsg;
+          console.log(`[Camera Test] ${label} ERROR: ${friendlyMsg}`);
+          return { url, label, success: false, error: friendlyMsg };
         }
-      } catch {
-        return res.status(400).json({ error: "Invalid URL" });
+      };
+
+      const urlsToTest: { url: string; label: string }[] = [];
+      
+      if (snapshotUrl) {
+        urlsToTest.push({ url: snapshotUrl, label: "snapshot" });
+      } else if (ip) {
+        urlsToTest.push({ url: `http://${ip}/cgi-bin/snapshot.cgi`, label: "snapshot" });
       }
       
-      console.log(`[Camera] Testing snapshot URL: ${url}`);
-      const response = await fetchWithAuth(url, username || null, password || null, {
-        timeout: 8000,
+      if (mjpegUrl) {
+        urlsToTest.push({ url: mjpegUrl, label: "mjpeg" });
+      }
+
+      const results = await Promise.all(urlsToTest.map(t => testUrl(t.url, t.label)));
+      
+      const reachable = results.some(r => r.success);
+      const snapshotResult = results.find(r => r.label === "snapshot");
+      const mjpegResult = results.find(r => r.label === "mjpeg");
+      
+      const recommendedMode = snapshotResult?.success ? "snapshot" :
+        mjpegResult?.success ? "mjpeg" : null;
+
+      console.log(`[Camera Test] Summary: reachable=${reachable}, recommended=${recommendedMode}`);
+
+      res.json({
+        reachable,
+        recommendedMode,
+        results,
+        summary: reachable 
+          ? `Camera is working! Recommended mode: ${recommendedMode}`
+          : `Could not connect to camera. ${results[0]?.error || "Check IP and credentials."}`,
       });
-      
-      if (response.ok) {
-        const contentType = response.headers.get("content-type") || "";
-        if (contentType.includes("image")) {
-          res.json({ success: true, message: "Camera snapshot working" });
-        } else {
-          res.json({ success: false, error: `Camera returned ${contentType} instead of an image` });
-        }
-      } else {
-        res.json({ success: false, error: `Camera returned HTTP ${response.status}` });
-      }
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : "Unknown error";
-      console.error("[Camera] Test error:", errMsg);
-      res.json({ success: false, error: errMsg.includes("timeout") ? "Camera did not respond (timed out)" : errMsg });
+      console.error("[Camera Test] Unexpected error:", errMsg);
+      res.status(500).json({ error: errMsg });
     }
   });
   
@@ -1489,13 +1552,39 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid camera URL" });
       }
       
-      const response = await fetchWithAuth(cameraUrl, cameraUsername, cameraPassword, {
-        timeout: 10000,
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      
+      let response: Response;
+      try {
+        response = await fetchWithAuth(cameraUrl, cameraUsername, cameraPassword, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+      } catch (err) {
+        clearTimeout(timeout);
+        const errMsg = err instanceof Error ? err.message : "Unknown";
+        if (errMsg.includes("abort")) {
+          return res.status(504).json({ error: "Camera timed out (10s) - check if camera is powered on and IP is correct" });
+        }
+        if (errMsg.includes("ECONNREFUSED")) {
+          return res.status(502).json({ error: "Connection refused - camera may be offline or wrong IP address" });
+        }
+        if (errMsg.includes("EHOSTUNREACH")) {
+          return res.status(502).json({ error: "Camera unreachable - make sure it's on the same network" });
+        }
+        throw err;
+      }
       
       if (!response.ok) {
         console.error(`[Camera] Snapshot failed: HTTP ${response.status} from ${cameraUrl}`);
-        throw new Error(`Camera returned ${response.status}`);
+        if (response.status === 401) {
+          return res.status(401).json({ error: "Authentication failed - check camera username and password" });
+        }
+        if (response.status === 404) {
+          return res.status(404).json({ error: "Snapshot URL not found on camera - try reconnecting with a different brand" });
+        }
+        return res.status(502).json({ error: `Camera returned HTTP ${response.status}` });
       }
       
       const contentType = response.headers.get("content-type") || "image/jpeg";

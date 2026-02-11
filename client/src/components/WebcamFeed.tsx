@@ -60,14 +60,16 @@ export default function WebcamFeed() {
   useEffect(() => {
     if (!cameraSettings) return;
     const st = cameraSettings.streamType;
-    if (st === "mjpeg" && hasMjpegUrl) {
+    if (st === "snapshot" && hasSnapshotUrl) {
+      setActiveMode("snapshot");
+    } else if (st === "mjpeg" && hasMjpegUrl) {
       setActiveMode("mjpeg");
     } else if (st === "rtsp" && hasRtspUrl) {
       setActiveMode("rtsp");
-    } else if (hasMjpegUrl) {
-      setActiveMode("mjpeg");
     } else if (hasSnapshotUrl) {
       setActiveMode("snapshot");
+    } else if (hasMjpegUrl) {
+      setActiveMode("mjpeg");
     } else if (hasRtspUrl) {
       setActiveMode("rtsp");
     } else {
@@ -269,19 +271,30 @@ export default function WebcamFeed() {
     let intervalId: NodeJS.Timeout;
     let isMounted = true;
 
+    let consecutiveErrors = 0;
+    const MAX_SNAPSHOT_ERRORS = 5;
+
     const fetchSnapshot = async () => {
       try {
         const timestamp = Date.now();
         const response = await fetch(`/api/camera/snapshot?t=${timestamp}`);
         
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+          const errorData = await response.json().catch(() => null);
+          const detail = errorData?.error || `HTTP ${response.status}`;
+          throw new Error(
+            response.status === 401 ? "Authentication failed - check camera username/password in Settings" :
+            response.status === 404 ? "Snapshot URL not found on camera - try a different camera brand" :
+            response.status === 502 ? `Camera error: ${detail}` :
+            detail
+          );
         }
         
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
         
         if (isMounted) {
+          consecutiveErrors = 0;
           setImageSrc((prev) => {
             if (prev) URL.revokeObjectURL(prev);
             return url;
@@ -291,9 +304,14 @@ export default function WebcamFeed() {
         }
       } catch (error) {
         if (isMounted) {
-          setHasError(true);
-          setIsLoading(false);
-          setErrorMessage("Snapshot fetch failed");
+          consecutiveErrors++;
+          const msg = error instanceof Error ? error.message : "Snapshot fetch failed";
+          console.warn(`[Camera] Snapshot error ${consecutiveErrors}/${MAX_SNAPSHOT_ERRORS}: ${msg}`);
+          if (consecutiveErrors >= MAX_SNAPSHOT_ERRORS) {
+            setHasError(true);
+            setIsLoading(false);
+            setErrorMessage(msg);
+          }
         }
       }
     };

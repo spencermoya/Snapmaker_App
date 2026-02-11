@@ -76,7 +76,7 @@ export default function Settings() {
 
   const CAMERA_BRANDS = [
     { id: "auto", name: "Auto-Detect", rtsp: "", snapshot: "", mjpeg: "" },
-    { id: "lorex", name: "Lorex / Dahua", rtsp: "/cam/realmonitor?channel=1&subtype=1", snapshot: "/cgi-bin/snapshot.cgi", mjpeg: "/cgi-bin/mjpg/video.cgi?channel=1&subtype=1" },
+    { id: "lorex", name: "Lorex / Dahua", rtsp: "/cam/realmonitor?channel=1&subtype=1", snapshot: "/cgi-bin/snapshot.cgi", mjpeg: "" },
     { id: "hikvision", name: "Hikvision", rtsp: "/Streaming/channels/101", snapshot: "/ISAPI/Streaming/channels/1/picture", mjpeg: "/ISAPI/Streaming/channels/102/httpPreview" },
     { id: "reolink", name: "Reolink", rtsp: "/h264Preview_01_main", snapshot: "/cgi-bin/api.cgi?cmd=Snap&channel=0", mjpeg: "" },
     { id: "amcrest", name: "Amcrest", rtsp: "/cam/realmonitor?channel=1&subtype=1", snapshot: "/cgi-bin/snapshot.cgi", mjpeg: "/cgi-bin/mjpg/video.cgi?channel=1&subtype=1" },
@@ -240,13 +240,24 @@ export default function Settings() {
         const rtspUrl = selectedBrand.rtsp ? `rtsp://${authPart}${cameraIp}:554${selectedBrand.rtsp}` : "";
         const mjpegUrl = selectedBrand.mjpeg ? `http://${cameraIp}${selectedBrand.mjpeg}` : "";
         
-        const defaultStreamType = mjpegUrl ? "mjpeg" : (snapshotUrl ? "snapshot" : "rtsp");
+        console.log(`[Camera] Brand selected: ${selectedBrand.name}, testing connection first...`);
         
-        console.log(`[Camera] Brand selected: ${selectedBrand.name}, saving settings directly`);
-        console.log(`[Camera] MJPEG URL: ${mjpegUrl}`);
-        console.log(`[Camera] Snapshot URL: ${snapshotUrl}`);
-        console.log(`[Camera] RTSP URL: ${rtspUrl}`);
-        console.log(`[Camera] Stream type: ${defaultStreamType}`);
+        const testResponse = await fetch("/api/camera/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ip: cameraIp,
+            snapshotUrl: snapshotUrl || undefined,
+            mjpegUrl: mjpegUrl || undefined,
+            username: cameraUsername,
+            password: cameraPassword,
+          }),
+        });
+        const testData = await testResponse.json();
+        
+        console.log(`[Camera] Test results:`, testData);
+        
+        const streamType = testData.recommendedMode || (snapshotUrl ? "snapshot" : (mjpegUrl ? "mjpeg" : "rtsp"));
         
         try {
           await saveCameraSettings({
@@ -256,10 +267,19 @@ export default function Settings() {
             username: cameraUsername,
             password: cameraPassword,
             refreshRate: 1000,
-            streamType: defaultStreamType,
+            streamType: streamType,
           });
           setCameraDetectedBrand(selectedBrand.name);
-          toast.success(`${selectedBrand.name} camera saved! Check the dashboard for the live feed.`);
+          
+          if (testData.reachable) {
+            const modeLabel = streamType === "snapshot" ? "Snapshot" : streamType === "mjpeg" ? "MJPEG Live" : "RTSP";
+            toast.success(`${selectedBrand.name} camera connected! Using ${modeLabel} mode.`);
+          } else {
+            const errorDetail = testData.results?.[0]?.error || "Could not reach camera";
+            setCameraPreviewError(`Settings saved but camera test failed: ${errorDetail}. The feed may not work until this is resolved.`);
+            toast.warning ? toast.warning("Camera saved but connection test failed - check the error below") : 
+              toast.error(`Settings saved but test failed: ${errorDetail}`);
+          }
         } catch {
           toast.error("Failed to save camera settings");
         }
@@ -1046,24 +1066,13 @@ export default function Settings() {
             <div className="space-y-4">
               {/* Camera Connected - Show Preview */}
               <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
-                {(cameraSettings as any)?.rtspUrl ? (
-                  // RTSP mode - show live stream status
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-gray-900 to-black">
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-                      <span className="text-white font-medium">LIVE</span>
-                    </div>
-                    <p className="text-gray-400 text-sm">Live stream active</p>
-                    <p className="text-gray-500 text-xs mt-1">View on dashboard</p>
-                  </div>
-                ) : (
-                  // Snapshot mode - show preview image
+                {cameraSettings?.streamType === "snapshot" && cameraSettings?.url ? (
                   <>
                     <img 
                       src={`/api/camera/snapshot?t=${Date.now()}`}
                       alt="Camera preview"
                       className="w-full h-full object-contain"
-                      onError={() => setCameraPreviewError("Could not load camera preview")}
+                      onError={() => setCameraPreviewError("Could not load camera preview - check camera connection")}
                     />
                     {cameraPreviewError && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/80">
@@ -1071,6 +1080,22 @@ export default function Settings() {
                       </div>
                     )}
                   </>
+                ) : cameraSettings?.streamType === "mjpeg" && cameraSettings?.mjpegUrl ? (
+                  <img 
+                    src={`/api/camera/mjpeg?t=${Date.now()}`}
+                    alt="Camera MJPEG preview"
+                    className="w-full h-full object-contain"
+                    onError={() => setCameraPreviewError("Could not load MJPEG stream")}
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-gray-900 to-black">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                      <span className="text-white font-medium">LIVE</span>
+                    </div>
+                    <p className="text-gray-400 text-sm">Stream configured</p>
+                    <p className="text-gray-500 text-xs mt-1">View on dashboard</p>
+                  </div>
                 )}
               </div>
               
@@ -1081,7 +1106,7 @@ export default function Settings() {
                     <div>
                       <p className="text-sm font-medium text-green-400">Camera Connected</p>
                       <p className="text-xs text-muted-foreground">
-                        {cameraSettings?.streamType === "mjpeg" ? "MJPEG Live Stream" : cameraSettings?.rtspUrl ? "RTSP Live Stream" : "Snapshot Mode"}
+                        {cameraSettings?.streamType === "snapshot" ? "Snapshot Mode (1 fps)" : cameraSettings?.streamType === "mjpeg" ? "MJPEG Live Stream" : "RTSP Live Stream"}
                       </p>
                     </div>
                   </div>
