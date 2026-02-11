@@ -46,9 +46,10 @@ export default function WebcamFeed() {
   });
 
   const isConfigured = cameraSettings?.url || cameraSettings?.rtspUrl;
-  const hasSnapshotFallback = !!cameraSettings?.url; // Can we fall back to snapshot?
-  // Use RTSP mode only if rtspUrl is set AND we haven't failed yet (or no snapshot fallback)
-  const isRtspMode = !!cameraSettings?.rtspUrl && (!rtspFailed || !hasSnapshotFallback);
+  const hasSnapshotUrl = !!cameraSettings?.url;
+  const hasRtspUrl = !!cameraSettings?.rtspUrl;
+  const streamTypeIsRtsp = cameraSettings?.streamType === "rtsp";
+  const isRtspMode = hasRtspUrl && (streamTypeIsRtsp || !hasSnapshotUrl) && !rtspFailed;
   const isStreamRunning = streamStatus?.running;
 
   const startStreamMutation = useMutation({
@@ -120,7 +121,7 @@ export default function WebcamFeed() {
         if (data.fatal) {
           console.error("[HLS] Fatal error:", data.type, data.details);
           // If we have a snapshot URL fallback, use it instead of showing error
-          if (hasSnapshotFallback) {
+          if (hasSnapshotUrl) {
             console.log("[HLS] Falling back to snapshot mode");
             setRtspFailed(true);
             setHasError(false);
