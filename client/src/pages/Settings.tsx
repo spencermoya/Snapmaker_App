@@ -233,85 +233,29 @@ export default function Settings() {
           setCameraPreviewError(data.error || "Could not detect camera. Try selecting your camera brand manually.");
         }
       } else if (selectedBrand) {
-        // Build URL from brand preset - try RTSP first, then snapshot
         const authPart = cameraUsername && cameraPassword 
           ? `${cameraUsername}:${cameraPassword}@` 
           : (cameraUsername ? `${cameraUsername}@` : "");
         
-        // Build both URLs - save both so dashboard can fallback if RTSP fails
         const snapshotUrl = selectedBrand.snapshot ? `http://${cameraIp}${selectedBrand.snapshot}` : "";
         const rtspUrl = selectedBrand.rtsp ? `rtsp://${authPart}${cameraIp}:554${selectedBrand.rtsp}` : "";
         
-        // Try snapshot first since it's more reliable and works immediately
-        if (snapshotUrl) {
-          // Test the snapshot URL before saving
-          const testResponse = await fetch("/api/camera/test", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              url: snapshotUrl,
-              username: cameraUsername,
-              password: cameraPassword,
-            }),
-          });
-          const testData = await testResponse.json();
-          
-          if (testData.success) {
-            try {
-              await saveCameraSettings({
-                url: snapshotUrl,
-                rtspUrl: rtspUrl, // Also save RTSP URL for optional live streaming later
-                username: cameraUsername,
-                password: cameraPassword,
-                refreshRate: 1000,
-              });
-              setCameraDetectedBrand(selectedBrand.name);
-              toast.success(`Connected to ${selectedBrand.name} camera!`);
-              setCameraConnecting(false);
-              return;
-            } catch {
-              toast.error("Failed to save camera settings");
-            }
-          } else {
-            // Snapshot test failed - show the specific error
-            console.log(`[Camera] Snapshot test failed for ${selectedBrand.name}: ${testData.error}`);
-            // Don't return yet - try RTSP next
-          }
-        }
+        console.log(`[Camera] Brand selected: ${selectedBrand.name}, saving settings directly`);
+        console.log(`[Camera] Snapshot URL: ${snapshotUrl}`);
+        console.log(`[Camera] RTSP URL: ${rtspUrl}`);
         
-        // Try RTSP if snapshot didn't work or wasn't available
-        if (rtspUrl) {
-          const streamResponse = await fetch("/api/stream/start", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ rtspUrl }),
+        try {
+          await saveCameraSettings({
+            url: snapshotUrl,
+            rtspUrl: rtspUrl,
+            username: cameraUsername,
+            password: cameraPassword,
+            refreshRate: 1000,
           });
-          
-          if (streamResponse.ok) {
-            try {
-              await saveCameraSettings({
-                url: "",
-                rtspUrl: rtspUrl,
-                username: cameraUsername,
-                password: cameraPassword,
-                refreshRate: 1000,
-              });
-              setCameraDetectedBrand(selectedBrand.name);
-              toast.success(`Connected to ${selectedBrand.name} camera with live streaming!`);
-            } catch {
-              toast.error("Failed to save camera settings");
-              await fetch("/api/stream/stop", { method: "POST" });
-            }
-            setCameraConnecting(false);
-            return;
-          } else {
-            const errorData = await streamResponse.json().catch(() => ({}));
-            setCameraPreviewError(errorData.error || "Could not connect to camera stream.");
-          }
-        }
-        
-        if (!rtspUrl) {
-          setCameraPreviewError("Could not connect to camera. Try checking the IP, username, and password.");
+          setCameraDetectedBrand(selectedBrand.name);
+          toast.success(`${selectedBrand.name} camera settings saved! Check the dashboard for the live feed.`);
+        } catch {
+          toast.error("Failed to save camera settings");
         }
       }
     } catch (error) {
