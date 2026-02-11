@@ -121,18 +121,19 @@ export async function fetchWithAuth(
   options: {
     method?: string;
     timeout?: number;
+    signal?: AbortSignal;
     headers?: Record<string, string>;
   } = {},
 ): Promise<Response> {
   const method = options.method || "GET";
-  const timeout = options.timeout || 10000;
   const extraHeaders = options.headers || {};
+  const sig = options.signal || AbortSignal.timeout(options.timeout || 10000);
 
   if (!username || !password) {
     return fetch(url, {
       method,
       headers: extraHeaders,
-      signal: AbortSignal.timeout(timeout),
+      signal: sig,
     });
   }
 
@@ -147,7 +148,7 @@ export async function fetchWithAuth(
     const response = await fetch(url, {
       method,
       headers: { ...extraHeaders, Authorization: authHeader },
-      signal: AbortSignal.timeout(timeout),
+      signal: sig,
     });
 
     if (response.status !== 401) {
@@ -162,7 +163,7 @@ export async function fetchWithAuth(
       return fetch(url, {
         method,
         headers: { ...extraHeaders, Authorization: newAuthHeader },
-        signal: AbortSignal.timeout(timeout),
+        signal: sig,
       });
     }
     authCache.delete(host);
@@ -173,14 +174,14 @@ export async function fetchWithAuth(
     return fetch(url, {
       method,
       headers: { ...extraHeaders, Authorization: `Basic ${basicAuth}` },
-      signal: AbortSignal.timeout(timeout),
+      signal: sig,
     });
   }
 
   const noAuthResponse = await fetch(url, {
     method,
     headers: extraHeaders,
-    signal: AbortSignal.timeout(timeout),
+    signal: sig,
   });
 
   if (noAuthResponse.status !== 401) {
@@ -197,7 +198,7 @@ export async function fetchWithAuth(
     return fetch(url, {
       method,
       headers: { ...extraHeaders, Authorization: authHeader },
-      signal: AbortSignal.timeout(timeout),
+      signal: sig,
     });
   }
 
@@ -207,6 +208,6 @@ export async function fetchWithAuth(
   return fetch(url, {
     method,
     headers: { ...extraHeaders, Authorization: `Basic ${basicAuth}` },
-    signal: AbortSignal.timeout(timeout),
+    signal: sig,
   });
 }

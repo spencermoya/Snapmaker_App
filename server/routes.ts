@@ -1536,9 +1536,19 @@ export async function registerRoutes(
       
       console.log(`[Camera] Starting MJPEG proxy stream from: ${mjpegUrl}`);
       
-      const response = await fetchWithAuth(mjpegUrl, cameraUsername, cameraPassword, {
-        timeout: 15000,
-      });
+      const controller = new AbortController();
+      const connectTimeout = setTimeout(() => controller.abort(), 15000);
+      
+      let response: Response;
+      try {
+        response = await fetchWithAuth(mjpegUrl, cameraUsername, cameraPassword, {
+          signal: controller.signal,
+        });
+        clearTimeout(connectTimeout);
+      } catch (err) {
+        clearTimeout(connectTimeout);
+        throw err;
+      }
       
       if (!response.ok) {
         console.error(`[Camera] MJPEG stream failed: HTTP ${response.status}`);

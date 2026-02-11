@@ -30,6 +30,9 @@ export default function WebcamFeed() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [streamLoading, setStreamLoading] = useState(false);
   const [activeMode, setActiveMode] = useState<"mjpeg" | "snapshot" | "rtsp">("mjpeg");
+  const [mjpegRetryCount, setMjpegRetryCount] = useState(0);
+  const mjpegRetryTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const MAX_MJPEG_RETRIES = 5;
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const mjpegRef = useRef<HTMLImageElement>(null);
@@ -101,7 +104,17 @@ export default function WebcamFeed() {
     },
   });
 
-  // MJPEG mode: just point an <img> at the proxy endpoint
+  useEffect(() => {
+    if (activeMode === "mjpeg") {
+      setMjpegRetryCount(0);
+      if (mjpegRetryTimerRef.current) {
+        clearTimeout(mjpegRetryTimerRef.current);
+        mjpegRetryTimerRef.current = null;
+      }
+    }
+  }, [activeMode, cameraSettings?.mjpegUrl]);
+
+  // MJPEG mode: point an <img> at the proxy endpoint with retry logic
   useEffect(() => {
     if (activeMode !== "mjpeg" || !isConfigured) return;
 
@@ -111,33 +124,57 @@ export default function WebcamFeed() {
       return;
     }
 
-    const timestamp = Date.now();
-    const src = `/api/camera/mjpeg?t=${timestamp}`;
+    const connectMjpeg = () => {
+      const timestamp = Date.now();
+      img.src = `/api/camera/mjpeg?t=${timestamp}`;
+    };
 
     const handleLoad = () => {
       setIsLoading(false);
       setHasError(false);
+      setMjpegRetryCount(0);
     };
 
     const handleError = () => {
-      console.error("[Camera] MJPEG stream error");
-      setErrorMessage("MJPEG live stream failed");
-      if (hasSnapshotUrl) {
-        fallbackToSnapshot();
-      } else {
-        setHasError(true);
-        setIsLoading(false);
-      }
+      setMjpegRetryCount(prev => {
+        const nextCount = prev + 1;
+        console.warn(`[Camera] MJPEG stream error (attempt ${nextCount}/${MAX_MJPEG_RETRIES})`);
+
+        if (nextCount < MAX_MJPEG_RETRIES) {
+          const delay = Math.min(2000 * nextCount, 10000);
+          setIsLoading(true);
+          setHasError(false);
+          mjpegRetryTimerRef.current = setTimeout(() => {
+            connectMjpeg();
+          }, delay);
+        } else {
+          setErrorMessage("MJPEG live stream failed after multiple retries");
+          if (hasSnapshotUrl) {
+            console.log("[Camera] Falling back to snapshot mode after MJPEG retries exhausted");
+            setActiveMode("snapshot");
+            setHasError(false);
+            setIsLoading(true);
+          } else {
+            setHasError(true);
+            setIsLoading(false);
+          }
+        }
+        return nextCount;
+      });
     };
 
     img.addEventListener("load", handleLoad);
     img.addEventListener("error", handleError);
-    img.src = src;
+    connectMjpeg();
 
     return () => {
       img.removeEventListener("load", handleLoad);
       img.removeEventListener("error", handleError);
       img.src = "";
+      if (mjpegRetryTimerRef.current) {
+        clearTimeout(mjpegRetryTimerRef.current);
+        mjpegRetryTimerRef.current = null;
+      }
     };
   }, [activeMode, isConfigured, cameraSettings?.mjpegUrl]);
 
@@ -348,7 +385,14 @@ export default function WebcamFeed() {
 
       {isLoading || streamLoading ? (
         <div className="w-full h-full flex items-center justify-center min-h-[200px]">
-          <RefreshCw className="h-8 w-8 text-muted-foreground animate-spin" />
+          <div className="text-center">
+            <RefreshCw className="h-8 w-8 text-muted-foreground animate-spin mx-auto" />
+            {activeMode === "mjpeg" && mjpegRetryCount > 0 && (
+              <p className="text-xs text-muted-foreground/60 mt-2">
+                Reconnecting... (attempt {mjpegRetryCount + 1}/{MAX_MJPEG_RETRIES})
+              </p>
+            )}
+          </div>
         </div>
       ) : hasError ? (
         <div className="w-full h-full flex flex-col items-center justify-center min-h-[200px] text-muted-foreground">
@@ -357,15 +401,30 @@ export default function WebcamFeed() {
           <p className="text-xs mt-1 text-muted-foreground/60">
             {errorMessage || "Check Settings to verify camera IP and credentials"}
           </p>
+          <button
+            onClick={() => {
+              setMjpegRetryCount(0);
+              setHasError(false);
+              setIsLoading(true);
+              if (mjpegRef.current) {
+                mjpegRef.current.src = `/api/camera/mjpeg?t=${Date.now()}`;
+              }
+            }}
+            className="mt-3 px-4 py-2 bg-primary/20 hover:bg-primary/30 rounded-lg text-primary text-sm transition-colors flex items-center gap-2"
+            data-testid="button-retry-camera"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Retry Connection
+          </button>
         </div>
       ) : null}
 
-      {/* MJPEG live stream - simple img tag pointed at proxy */}
-      {activeMode === "mjpeg" && !hasError && (
+      {/* MJPEG live stream - always in DOM for retry, hidden when error/loading */}
+      {activeMode === "mjpeg" && (
         <img 
           ref={mjpegRef}
           alt="Live Camera Feed"
-          className={`w-full h-full object-contain ${isFullscreen ? 'max-h-screen' : ''} ${isLoading ? 'hidden' : ''}`}
+          className={`w-full h-full object-contain ${isFullscreen ? 'max-h-screen' : ''} ${(isLoading || hasError) ? 'hidden' : ''}`}
           style={{ imageRendering: 'auto' }}
           data-testid="img-mjpeg-feed"
         />
