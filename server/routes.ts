@@ -1282,6 +1282,8 @@ export async function registerRoutes(
     try {
       const { url, rtspUrl, mjpegUrl, username, password, refreshRate, streamType, clearPassword } = req.body;
       
+      console.log(`[Camera Settings] Saving: url=${url || '(empty)'}, rtspUrl=${rtspUrl || '(empty)'}, mjpegUrl=${mjpegUrl || '(empty)'}, username=${username || '(empty)'}, streamType=${streamType || '(empty)'}, refreshRate=${refreshRate}, clearPassword=${!!clearPassword}`);
+      
       await storage.setSetting("camera_url", url || null);
       await storage.setSetting("camera_rtsp_url", rtspUrl || null);
       await storage.setSetting("camera_mjpeg_url", mjpegUrl || null);
@@ -1294,15 +1296,20 @@ export async function registerRoutes(
       }
       
       await storage.setSetting("camera_refresh_rate", refreshRate ? String(refreshRate) : "1000");
-      await storage.setSetting("camera_stream_type", streamType || "snapshot");
+      await storage.setSetting("camera_stream_type", streamType || "mjpeg");
       
-      // Stop any running stream if RTSP URL changed or was cleared
       if (!rtspUrl) {
         stopStream();
       }
       
+      const savedMjpeg = await storage.getSetting("camera_mjpeg_url");
+      const savedType = await storage.getSetting("camera_stream_type");
+      console.log(`[Camera Settings] Verified save: mjpegUrl=${savedMjpeg}, streamType=${savedType}`);
+      
       res.json({ success: true, message: "Camera settings saved" });
     } catch (error) {
+      const errMsg = error instanceof Error ? error.message : "Unknown error";
+      console.error(`[Camera Settings] Save FAILED: ${errMsg}`);
       res.status(500).json({ error: "Failed to save camera settings" });
     }
   });

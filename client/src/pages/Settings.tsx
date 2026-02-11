@@ -1042,7 +1042,7 @@ export default function Settings() {
           </div>
           
           {/* Show connected state or setup form */}
-          {cameraSettings?.url || (cameraSettings as any)?.rtspUrl ? (
+          {cameraSettings?.url || cameraSettings?.rtspUrl || cameraSettings?.mjpegUrl ? (
             <div className="space-y-4">
               {/* Camera Connected - Show Preview */}
               <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
@@ -1081,7 +1081,7 @@ export default function Settings() {
                     <div>
                       <p className="text-sm font-medium text-green-400">Camera Connected</p>
                       <p className="text-xs text-muted-foreground">
-                        {(cameraSettings as any)?.rtspUrl ? "Live Stream Mode" : "Snapshot Mode"}
+                        {cameraSettings?.streamType === "mjpeg" ? "MJPEG Live Stream" : cameraSettings?.rtspUrl ? "RTSP Live Stream" : "Snapshot Mode"}
                       </p>
                     </div>
                   </div>
