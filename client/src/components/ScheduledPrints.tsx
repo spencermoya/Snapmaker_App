@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Clock, Trash2, AlertCircle, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { Clock, Trash2, AlertCircle, CheckCircle, XCircle, Loader2, Plug, Wifi } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
@@ -28,11 +28,13 @@ export default function ScheduledPrints({ printerId }: ScheduledPrintsProps) {
   });
 
   const pending = prints.filter(p => p.status === "pending");
+  const warmingUp = prints.filter(p => p.status === "warming_up");
+  const connecting = prints.filter(p => p.status === "connecting");
   const completed = prints.filter(p => p.status === "completed");
   const failed = prints.filter(p => p.status === "failed");
   const running = prints.filter(p => p.status === "running");
 
-  const sortedPrints = [...running, ...pending, ...failed, ...completed].slice(0, 10);
+  const sortedPrints = [...running, ...connecting, ...warmingUp, ...pending, ...failed, ...completed].slice(0, 10);
 
   if (sortedPrints.length === 0) {
     return (
@@ -55,6 +57,8 @@ export default function ScheduledPrints({ printerId }: ScheduledPrintsProps) {
   function getStatusIcon(status: string) {
     switch (status) {
       case "pending": return <Clock className="h-3.5 w-3.5 text-yellow-400" />;
+      case "warming_up": return <Plug className="h-3.5 w-3.5 text-orange-400 animate-pulse" />;
+      case "connecting": return <Wifi className="h-3.5 w-3.5 text-blue-400 animate-pulse" />;
       case "running": return <Loader2 className="h-3.5 w-3.5 text-blue-400 animate-spin" />;
       case "completed": return <CheckCircle className="h-3.5 w-3.5 text-green-400" />;
       case "failed": return <XCircle className="h-3.5 w-3.5 text-red-400" />;
@@ -66,10 +70,20 @@ export default function ScheduledPrints({ printerId }: ScheduledPrintsProps) {
   function getStatusColor(status: string) {
     switch (status) {
       case "pending": return "text-yellow-400";
+      case "warming_up": return "text-orange-400";
+      case "connecting": return "text-blue-400";
       case "running": return "text-blue-400";
       case "completed": return "text-green-400";
       case "failed": return "text-red-400";
       default: return "text-muted-foreground";
+    }
+  }
+
+  function getStatusLabel(status: string) {
+    switch (status) {
+      case "warming_up": return "powering on";
+      case "connecting": return "connecting";
+      default: return status;
     }
   }
 
@@ -130,10 +144,10 @@ export default function ScheduledPrints({ printerId }: ScheduledPrintsProps) {
                 <div className="flex items-center gap-2">
                   <span className={`text-[10px] uppercase font-medium ${getStatusColor(print.status)}`}
                     data-testid={`text-scheduled-status-${print.id}`}>
-                    {print.status}
+                    {getStatusLabel(print.status)}
                   </span>
                   <span className="text-[10px] text-muted-foreground">
-                    {print.status === "pending"
+                    {(print.status === "pending" || print.status === "warming_up" || print.status === "connecting")
                       ? formatScheduledTime(print.scheduledAt)
                       : formatDate(new Date(print.scheduledAt))}
                   </span>

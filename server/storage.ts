@@ -286,6 +286,16 @@ export class DbStorage implements IStorage {
       ));
   }
 
+  async getScheduledPrintsForProcessing(): Promise<ScheduledPrint[]> {
+    const fiveMinutesFromNow = new Date(Date.now() + 5 * 60 * 1000);
+    const results = await db.select().from(scheduledPrints);
+    return results.filter(p => {
+      if (p.status === "warming_up" || p.status === "connecting") return true;
+      if (p.status === "pending" && new Date(p.scheduledAt) <= fiveMinutesFromNow) return true;
+      return false;
+    });
+  }
+
   async updateScheduledPrint(id: number, data: Partial<ScheduledPrint>): Promise<ScheduledPrint | undefined> {
     const result = await db.update(scheduledPrints).set(data).where(eq(scheduledPrints.id, id)).returning();
     return result[0];

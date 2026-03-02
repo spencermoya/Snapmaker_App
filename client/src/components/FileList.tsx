@@ -730,7 +730,7 @@ export default function FileList({ printerId }: FileListProps) {
                   
                   {powerOnPlug && (
                     <p className="text-[11px] text-muted-foreground">
-                      The plug will turn on 30 seconds before the print starts, giving the printer time to boot up.
+                      The plug will turn on 5 minutes before the scheduled time, giving the printer time to boot up.
                     </p>
                   )}
                 </div>
