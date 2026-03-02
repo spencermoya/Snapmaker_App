@@ -3,7 +3,8 @@ import mqtt from "mqtt";
 import { storage } from "./storage";
 
 const SECRET = "23x17ahWarFH6w29";
-const DEFAULT_DOMAIN = "iotx.meross.com";
+const DEFAULT_DOMAIN = "iotx-us.meross.com";
+const MQTT_FALLBACK_DOMAINS = ["iotx-us.meross.com", "mqtt-us.meross.com"];
 
 let httpDomain = DEFAULT_DOMAIN;
 let token = "";
@@ -14,6 +15,7 @@ let isConnected = false;
 let connectionError: string | null = null;
 let discoveredDevices: MerossDeviceInfo[] = [];
 let mqttClient: mqtt.MqttClient | null = null;
+let mqttDomainFromLogin: string | null = null;
 const pendingMessages = new Map<string, { resolve: (data: any) => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>();
 
 interface MerossDeviceInfo {
@@ -111,8 +113,20 @@ async function cloudRequest(endpoint: string, paramsData: any): Promise<any> {
   return result.data;
 }
 
-function getMqttDomain(): string {
-  return httpDomain || "iotx-us.meross.com";
+function getMqttDomainsToTry(): string[] {
+  const domains: string[] = [];
+  if (mqttDomainFromLogin) {
+    domains.push(mqttDomainFromLogin);
+  }
+  if (httpDomain && !domains.includes(httpDomain)) {
+    domains.push(httpDomain);
+  }
+  for (const fallback of MQTT_FALLBACK_DOMAINS) {
+    if (!domains.includes(fallback)) {
+      domains.push(fallback);
+    }
+  }
+  return domains;
 }
 
 function disposeMqttClient(): void {
@@ -125,21 +139,15 @@ function disposeMqttClient(): void {
   }
 }
 
-function connectMqtt(): Promise<void> {
+function connectMqttToSingleDomain(domain: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (mqttClient?.connected) {
-      resolve();
-      return;
-    }
-
     disposeMqttClient();
 
     appId = crypto.createHash("md5").update(`API${generateRandomString(16)}`).digest("hex");
     const clientId = `app:${appId}`;
     const hashedPassword = crypto.createHash("md5").update(userId + key).digest("hex");
 
-    const mqttDomain = getMqttDomain();
-    const brokerUrl = `mqtts://${mqttDomain}:2001`;
+    const brokerUrl = `mqtts://${domain}:2001`;
     console.log(`[MerossService] Connecting MQTT to ${brokerUrl} as ${clientId}...`);
 
     const client = mqtt.connect(brokerUrl, {
@@ -148,8 +156,8 @@ function connectMqtt(): Promise<void> {
       password: hashedPassword,
       rejectUnauthorized: true,
       keepalive: 30,
-      reconnectPeriod: 5000,
-      connectTimeout: 15000,
+      reconnectPeriod: 0,
+      connectTimeout: 10000,
       protocolVersion: 4,
     });
 
@@ -160,9 +168,9 @@ function connectMqtt(): Promise<void> {
         settled = true;
         client.removeAllListeners();
         client.end(true);
-        reject(new Error(`MQTT connection timed out to ${mqttDomain}`));
+        reject(new Error(`MQTT connack timeout to ${domain}`));
       }
-    }, 15000);
+    }, 10000);
 
     client.on("connect", () => {
       if (settled) return;
@@ -173,13 +181,13 @@ function connectMqtt(): Promise<void> {
         if (settled) return;
         settled = true;
         if (err) {
-          console.log(`[MerossService] MQTT subscribe error: ${err.message}`);
+          console.log(`[MerossService] MQTT subscribe error on ${domain}: ${err.message}`);
           client.removeAllListeners();
           client.end(true);
           reject(err);
         } else {
           mqttClient = client;
-          console.log(`[MerossService] MQTT connected and subscribed to ${userTopic}`);
+          console.log(`[MerossService] MQTT connected to ${domain} and subscribed to ${userTopic}`);
           resolve();
         }
       });
@@ -191,14 +199,14 @@ function connectMqtt(): Promise<void> {
         const messageId = data?.header?.messageId;
         const namespace = data?.header?.namespace;
         const method = data?.header?.method;
-        console.log(`[MerossService] MQTT received on ${topic}: messageId=${messageId}, namespace=${namespace}, method=${method}`);
+        console.log(`[MerossService] MQTT recv on ${topic}: id=${messageId}, ns=${namespace}, method=${method}`);
         if (messageId && pendingMessages.has(messageId)) {
           const pending = pendingMessages.get(messageId)!;
           clearTimeout(pending.timer);
           pendingMessages.delete(messageId);
           pending.resolve(data);
         } else {
-          console.log(`[MerossService] MQTT message not matched to pending request (messageId=${messageId})`);
+          console.log(`[MerossService] MQTT message unmatched (id=${messageId})`);
         }
       } catch (err) {
         console.log(`[MerossService] MQTT message parse error: ${err}`);
@@ -206,7 +214,7 @@ function connectMqtt(): Promise<void> {
     });
 
     client.on("error", (err: Error) => {
-      console.log(`[MerossService] MQTT error: ${err.message}`);
+      console.log(`[MerossService] MQTT error on ${domain}: ${err.message}`);
       if (!settled) {
         settled = true;
         clearTimeout(timeout);
@@ -217,7 +225,7 @@ function connectMqtt(): Promise<void> {
     });
 
     client.on("close", () => {
-      console.log("[MerossService] MQTT connection closed");
+      console.log(`[MerossService] MQTT connection to ${domain} closed`);
       if (mqttClient === client) {
         mqttClient = null;
       }
@@ -227,6 +235,29 @@ function connectMqtt(): Promise<void> {
       console.log("[MerossService] MQTT offline");
     });
   });
+}
+
+async function connectMqtt(): Promise<void> {
+  if (mqttClient?.connected) {
+    return;
+  }
+
+  const domains = getMqttDomainsToTry();
+  const errors: string[] = [];
+
+  for (const domain of domains) {
+    try {
+      await connectMqttToSingleDomain(domain);
+      console.log(`[MerossService] MQTT successfully connected via ${domain}`);
+      return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`${domain}: ${msg}`);
+      console.log(`[MerossService] MQTT failed on ${domain}: ${msg}, trying next...`);
+    }
+  }
+
+  throw new Error(`Cannot connect to Meross cloud MQTT (tried: ${errors.join("; ")})`);
 }
 
 function sendMqttCommand(deviceId: string, method: string, namespace: string, payload: any): Promise<any> {
@@ -320,7 +351,14 @@ export async function merossLogin(email: string, password: string): Promise<Mero
   token = loginResponse.token;
   key = loginResponse.key;
   userId = String(loginResponse.userid);
-  console.log(`[MerossService] Login successful (domain: ${httpDomain}), connecting MQTT...`);
+  const responseMqttDomain = loginResponse.mqttDomain || loginResponse.domain || loginResponse.mqtt_domain;
+  if (responseMqttDomain) {
+    const cleanDomain = String(responseMqttDomain).replace(/^https?:\/\//, "").replace(/\/+$/, "");
+    mqttDomainFromLogin = cleanDomain;
+    console.log(`[MerossService] Login response includes MQTT domain: ${mqttDomainFromLogin}`);
+  }
+  console.log(`[MerossService] Login successful (domain: ${httpDomain}, userId: ${userId}), connecting MQTT...`)
+  console.log(`[MerossService] MQTT domains to try: ${getMqttDomainsToTry().join(", ")}`);
 
   try {
     await connectMqtt();
@@ -437,6 +475,7 @@ export async function merossGetStatus(deviceId: string): Promise<{ isOn: boolean
 
 export async function merossLogout(): Promise<void> {
   disposeMqttClient();
+  mqttDomainFromLogin = null;
 
   for (const [, pending] of pendingMessages) {
     clearTimeout(pending.timer);
