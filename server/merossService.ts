@@ -126,15 +126,27 @@ async function sendLocalCommand(deviceIp: string, method: string, namespace: str
     payload,
   };
 
-  const resp = await fetch(`http://${deviceIp}/config`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-    signal: AbortSignal.timeout(10000),
-  });
+  let resp;
+  try {
+    resp = await fetch(`http://${deviceIp}/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch (err: any) {
+    const name = err?.name || "";
+    const msg = err instanceof Error ? err.message : String(err);
+    if (name === "TimeoutError" || name === "AbortError" || msg.includes("abort") || msg.includes("timeout")) {
+      throw new Error(`Device at ${deviceIp} did not respond (timed out after 10s). Check the IP address and ensure the device is powered on.`);
+    }
+    throw new Error(`Could not reach device at ${deviceIp}: ${msg}. Check the IP address and ensure the device is on the same network.`);
+  }
 
   if (!resp.ok) {
-    throw new Error(`Local device HTTP error: ${resp.status}`);
+    let body = "";
+    try { body = await resp.text(); } catch {}
+    throw new Error(`Device at ${deviceIp} returned HTTP ${resp.status}${body ? `: ${body.substring(0, 200)}` : ""}`);
   }
 
   return resp.json();
@@ -245,6 +257,10 @@ export async function merossToggle(deviceId: string, channel: number, turnOn: bo
     throw new Error(`No local IP configured for "${device.name}". Go to Settings and enter the device's IP address.`);
   }
 
+  if (!key) {
+    throw new Error(`Meross cloud login required before controlling devices. Check your Meross credentials in Settings.`);
+  }
+
   try {
     if (device.usesToggleX) {
       const payload = { togglex: { channel, onoff: turnOn ? 1 : 0 } };
@@ -315,6 +331,20 @@ export function getMerossError(): string | null {
 
 export function getConnectedDeviceIds(): string[] {
   return discoveredDevices.map(d => d.deviceId);
+}
+
+export async function testDeviceConnection(deviceId: string, localIp: string): Promise<{ success: boolean; message: string }> {
+  if (!key) {
+    return { success: false, message: "Meross cloud login required first. Check your credentials in Settings." };
+  }
+  try {
+    const allData = await sendLocalCommand(localIp, "GET", "Appliance.System.All", {});
+    const name = allData?.payload?.all?.system?.hardware?.type || "Unknown device";
+    const firmware = allData?.payload?.all?.system?.firmware?.version || "unknown";
+    return { success: true, message: `Connected to ${name} (firmware ${firmware})` };
+  } catch (err) {
+    return { success: false, message: err instanceof Error ? err.message : "Connection test failed" };
+  }
 }
 
 export function updateDeviceLocalIp(deviceId: string, localIp: string | null): void {

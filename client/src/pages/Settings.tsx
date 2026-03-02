@@ -59,6 +59,8 @@ export default function Settings() {
   const [merossConnecting, setMerossConnecting] = useState(false);
   const [deviceIps, setDeviceIps] = useState<Record<number, string>>({});
   const [savingIp, setSavingIp] = useState<number | null>(null);
+  const [testingDevice, setTestingDevice] = useState<number | null>(null);
+  const [testResults, setTestResults] = useState<Record<number, { success: boolean; message: string }>>({});
 
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [pushSupported, setPushSupported] = useState(false);
@@ -570,6 +572,27 @@ export default function Settings() {
       toast.error(error instanceof Error ? error.message : "Failed to save IP");
     } finally {
       setSavingIp(null);
+    }
+  };
+
+  const handleTestDevice = async (plugId: number) => {
+    setTestingDevice(plugId);
+    setTestResults(prev => ({ ...prev, [plugId]: undefined as any }));
+    try {
+      const res = await apiRequest("POST", `/api/meross/devices/${plugId}/test`);
+      const result = await res.json();
+      setTestResults(prev => ({ ...prev, [plugId]: result }));
+      if (result.success) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Test failed";
+      setTestResults(prev => ({ ...prev, [plugId]: { success: false, message: msg } }));
+      toast.error(msg);
+    } finally {
+      setTestingDevice(null);
     }
   };
 
@@ -1500,9 +1523,29 @@ export default function Settings() {
                             "Save IP"
                           )}
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 text-xs shrink-0"
+                          onClick={() => handleTestDevice(plug.id)}
+                          disabled={testingDevice === plug.id || !plug.localIp}
+                          data-testid={`button-test-plug-${plug.id}`}
+                        >
+                          {testingDevice === plug.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            "Test"
+                          )}
+                        </Button>
                       </div>
                       {!plug.localIp && (
                         <p className="text-xs text-amber-400">Enter the device's local IP address to enable control.</p>
+                      )}
+                      {testResults[plug.id] && (
+                        <p className={`text-xs ${testResults[plug.id].success ? "text-green-400" : "text-red-400"}`}
+                          data-testid={`text-test-result-${plug.id}`}>
+                          {testResults[plug.id].message}
+                        </p>
                       )}
                     </div>
                   ))}
