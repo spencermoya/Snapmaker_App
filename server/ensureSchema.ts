@@ -148,6 +148,36 @@ const REQUIRED_COLUMNS = [
     column: "thumbnail",
     addSQL: "ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS thumbnail TEXT",
   },
+  {
+    table: "smart_plugs",
+    column: "model",
+    addSQL: "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS model TEXT",
+  },
+  {
+    table: "smart_plugs",
+    column: "device_type",
+    addSQL: "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS device_type TEXT",
+  },
+  {
+    table: "smart_plugs",
+    column: "channel",
+    addSQL: "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS channel INTEGER DEFAULT 0",
+  },
+  {
+    table: "smart_plugs",
+    column: "is_on",
+    addSQL: "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS is_on BOOLEAN DEFAULT false",
+  },
+  {
+    table: "smart_plugs",
+    column: "last_seen",
+    addSQL: "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP",
+  },
+  {
+    table: "smart_plugs",
+    column: "created_at",
+    addSQL: "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()",
+  },
 ];
 
 const COLUMNS_TO_DROP = [
