@@ -1,190 +1,304 @@
+import crypto from "crypto";
 import { storage } from "./storage";
 
-let MerossCloud: any = null;
-let merossInstance: any = null;
-let connectedDevices: Map<string, any> = new Map();
+const SECRET = "23x17ahWarFH6w29";
+const DEFAULT_DOMAIN = "iotx.meross.com";
+
+let httpDomain = DEFAULT_DOMAIN;
+let token = "";
+let key = "";
+let userId = "";
 let isConnected = false;
 let connectionError: string | null = null;
+let discoveredDevices: MerossDeviceInfo[] = [];
 
-interface MerossDevice {
+interface MerossDeviceInfo {
   deviceId: string;
   name: string;
   model: string;
   deviceType: string;
   isOn: boolean;
   channels: number[];
+  localIp: string | null;
+  usesToggleX: boolean;
 }
 
-async function loadMerossCloud() {
-  if (!MerossCloud) {
-    const mod = await import("meross-cloud");
-    MerossCloud = mod.default || mod;
+interface CloudResponse {
+  apiStatus: number;
+  data: any;
+  info?: string;
+}
+
+function generateRandomString(length: number): string {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  while (result.length < length) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  return MerossCloud;
+  return result;
 }
 
-export async function merossLogin(email: string, password: string): Promise<MerossDevice[]> {
+function encodeParams(params: any): string {
+  return Buffer.from(JSON.stringify(params)).toString("base64");
+}
+
+async function cloudRequest(endpoint: string, paramsData: any): Promise<any> {
+  const nonce = generateRandomString(16);
+  const timestampMillis = Date.now();
+  const loginParams = encodeParams(paramsData);
+
+  const dataToSign = SECRET + timestampMillis + nonce + loginParams;
+  const sign = crypto.createHash("md5").update(dataToSign).digest("hex");
+
+  const headers: Record<string, string> = {
+    "Authorization": `Basic ${token || ""}`,
+    "Vendor": "meross",
+    "AppVersion": "3.22.4",
+    "AppType": "iOS",
+    "AppLanguage": "en",
+    "User-Agent": "intellect_socket/3.22.4 (iPhone; iOS 17.2; Scale/2.00)",
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
+
+  const body = new URLSearchParams({
+    params: loginParams,
+    sign,
+    timestamp: String(timestampMillis),
+    nonce,
+  });
+
+  const url = `https://${httpDomain}${endpoint}`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers,
+    body: body.toString(),
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!resp.ok) {
+    throw new Error(`HTTP ${resp.status} from Meross API`);
+  }
+
+  const result: CloudResponse = await resp.json();
+
+  if (result.apiStatus === 1030 && result.data?.domain) {
+    httpDomain = result.data.domain.replace(/^https?:\/\//, "");
+    return cloudRequest(endpoint, paramsData);
+  }
+
+  if (result.apiStatus !== 0) {
+    const errorMessages: Record<number, string> = {
+      1001: "Wrong or missing password",
+      1002: "Account does not exist",
+      1003: "Token expired or invalid",
+      1004: "Wrong token",
+      1005: "No device with that UUID",
+      1006: "Token has expired",
+      1019: "Token expired",
+      1022: "MFA code required",
+      1030: "Wrong region",
+      1200: "Too many logins",
+      1301: "Too many requests",
+      5000: "Server error",
+    };
+    const msg = errorMessages[result.apiStatus] || `API error ${result.apiStatus}`;
+    throw new Error(`${msg}${result.info ? ` - ${result.info}` : ""}`);
+  }
+
+  return result.data;
+}
+
+async function sendLocalCommand(deviceIp: string, method: string, namespace: string, payload: any): Promise<any> {
+  const messageId = crypto.createHash("md5").update(generateRandomString(16)).digest("hex");
+  const timestamp = Math.round(Date.now() / 1000);
+  const signature = crypto.createHash("md5").update(messageId + key + timestamp).digest("hex");
+
+  const data = {
+    header: {
+      from: "",
+      messageId,
+      method,
+      namespace,
+      payloadVersion: 1,
+      sign: signature,
+      timestamp,
+    },
+    payload,
+  };
+
+  const resp = await fetch(`http://${deviceIp}/config`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!resp.ok) {
+    throw new Error(`Local device HTTP error: ${resp.status}`);
+  }
+
+  return resp.json();
+}
+
+export async function merossLogin(email: string, password: string): Promise<MerossDeviceInfo[]> {
   await merossLogout();
 
-  const MC = await loadMerossCloud();
-  
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error("Meross login timed out after 30 seconds"));
-    }, 30000);
+  httpDomain = DEFAULT_DOMAIN;
 
-    const devices: MerossDevice[] = [];
-    let deviceCount = 0;
-    let initializedCount = 0;
+  const passwordHash = crypto.createHash("md5").update(password).digest("hex");
+  const logIdentifier = generateRandomString(30) + crypto.randomUUID();
 
-    merossInstance = new MC({
-      email,
-      password,
-      logger: console.log,
-      localHttpFirst: false,
-      onlyLocalForGet: false,
-      timeout: 10000,
-    });
+  const loginData = {
+    email,
+    password: passwordHash,
+    encryption: 1,
+    accountCountryCode: "--",
+    mobileInfo: {
+      resolution: "--",
+      carrier: "--",
+      deviceModel: "--",
+      mobileOs: "linux",
+      mobileOSVersion: "--",
+      uuid: logIdentifier,
+    },
+    agree: 1,
+  };
 
-    merossInstance.on("deviceInitialized", (deviceId: string, deviceDef: any, device: any) => {
-      deviceCount++;
-      console.log(`[MerossService] Device discovered: ${deviceDef.devName} (${deviceId})`);
-      
-      connectedDevices.set(deviceId, device);
+  console.log("[MerossService] Logging in to Meross cloud...");
+  let loginResponse;
+  try {
+    loginResponse = await cloudRequest("/v1/Auth/signIn", loginData);
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : "Login failed";
+    connectionError = errMsg;
+    throw err;
+  }
 
-      const dev: MerossDevice = {
-        deviceId,
-        name: deviceDef.devName || deviceDef.deviceName || "Unknown Device",
-        model: deviceDef.deviceType || deviceDef.devType || "Unknown",
-        deviceType: deviceDef.deviceType || deviceDef.devType || "Unknown",
+  if (!loginResponse || !loginResponse.token) {
+    connectionError = "No valid login response received";
+    throw new Error(connectionError);
+  }
+
+  token = loginResponse.token;
+  key = loginResponse.key;
+  userId = String(loginResponse.userid);
+  console.log("[MerossService] Login successful, fetching device list...");
+
+  const deviceList = await cloudRequest("/v1/Device/devList", {});
+  const devices: MerossDeviceInfo[] = [];
+
+  if (Array.isArray(deviceList)) {
+    for (const dev of deviceList) {
+      const deviceIp = dev.domain || null;
+
+      const device: MerossDeviceInfo = {
+        deviceId: dev.uuid,
+        name: dev.devName || dev.deviceName || "Unknown Device",
+        model: dev.deviceType || dev.devType || "Unknown",
+        deviceType: dev.deviceType || dev.devType || "Unknown",
         isOn: false,
-        channels: deviceDef.channels ? deviceDef.channels.map((_: any, i: number) => i) : [0],
+        channels: dev.channels ? dev.channels.map((_: any, i: number) => i) : [0],
+        localIp: deviceIp,
+        usesToggleX: true,
       };
 
-      device.on("connected", () => {
-        console.log(`[MerossService] Device connected: ${dev.name}`);
-        initializedCount++;
-
-        device.getSystemAllData((err: any, data: any) => {
-          if (!err && data) {
-            console.log(`[MerossService] Got system data for ${dev.name}`);
+      if (deviceIp) {
+        try {
+          const allData = await sendLocalCommand(deviceIp, "GET", "Appliance.System.All", {});
+          if (allData?.payload?.all?.digest?.togglex) {
+            const togglex = allData.payload.all.digest.togglex;
+            const ch0 = togglex.find((t: any) => t.channel === 0);
+            device.isOn = ch0 ? !!ch0.onoff : false;
+            device.usesToggleX = true;
+          } else if (allData?.payload?.all?.digest?.toggle) {
+            device.isOn = !!allData.payload.all.digest.toggle.onoff;
+            device.usesToggleX = false;
           }
-
-          device.getOnOff((err: any, onOff: any) => {
-            if (!err && onOff !== undefined) {
-              dev.isOn = !!onOff;
-            }
-            devices.push(dev);
-            
-            if (initializedCount >= deviceCount) {
-              setTimeout(() => {
-                clearTimeout(timeout);
-                isConnected = true;
-                connectionError = null;
-                resolve(devices);
-              }, 1000);
-            }
-          });
-        });
-      });
-
-      device.on("error", (err: any) => {
-        console.log(`[MerossService] Device error for ${dev.name}:`, err?.message || err);
-      });
-    });
-
-    merossInstance.on("connected", () => {
-      console.log("[MerossService] Connected to Meross cloud");
-      
-      setTimeout(() => {
-        if (deviceCount === 0) {
-          clearTimeout(timeout);
-          isConnected = true;
-          connectionError = null;
-          resolve([]);
+        } catch (err) {
+          console.log(`[MerossService] Could not get local status for ${device.name}: ${err instanceof Error ? err.message : err}`);
         }
-      }, 5000);
-    });
-
-    merossInstance.on("error", (err: any) => {
-      clearTimeout(timeout);
-      connectionError = err?.message || "Unknown Meross error";
-      console.error("[MerossService] Connection error:", connectionError);
-      reject(new Error(connectionError!));
-    });
-
-    merossInstance.on("close", (err: any) => {
-      console.log("[MerossService] Connection closed:", err?.message || "");
-      isConnected = false;
-    });
-
-    merossInstance.connect((err: any) => {
-      if (err) {
-        clearTimeout(timeout);
-        connectionError = err?.message || "Failed to connect";
-        console.error("[MerossService] Connect callback error:", connectionError);
-        reject(new Error(connectionError!));
       }
-    });
-  });
+
+      devices.push(device);
+      console.log(`[MerossService] Device discovered: ${device.name} (${device.deviceId}) IP: ${deviceIp || "unknown"}`);
+    }
+  }
+
+  discoveredDevices = devices;
+  isConnected = true;
+  connectionError = null;
+  console.log(`[MerossService] Connected with ${devices.length} device(s)`);
+  return devices;
 }
 
 export async function merossToggle(deviceId: string, channel: number, turnOn: boolean): Promise<boolean> {
-  const device = connectedDevices.get(deviceId);
+  const device = discoveredDevices.find(d => d.deviceId === deviceId);
   if (!device) {
-    throw new Error(`Device ${deviceId} not found or not connected`);
+    throw new Error(`Device ${deviceId} not found`);
   }
 
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error("Toggle operation timed out after 10 seconds"));
-    }, 10000);
+  if (!device.localIp) {
+    const errMsg = `No local IP known for device ${device.name} - cannot send toggle command`;
+    connectionError = errMsg;
+    throw new Error(errMsg);
+  }
 
-    device.controlToggleX(channel, turnOn, (err: any, res: any) => {
-      clearTimeout(timeout);
-      if (err) {
-        console.error(`[MerossService] Toggle failed for ${deviceId}:`, err);
-        reject(new Error(err?.message || "Toggle failed"));
-      } else {
-        console.log(`[MerossService] Toggled ${deviceId} channel ${channel} to ${turnOn ? "ON" : "OFF"}`);
-        resolve(true);
-      }
-    });
-  });
+  try {
+    if (device.usesToggleX) {
+      const payload = { togglex: { channel, onoff: turnOn ? 1 : 0 } };
+      await sendLocalCommand(device.localIp, "SET", "Appliance.Control.ToggleX", payload);
+    } else {
+      const payload = { toggle: { onoff: turnOn ? 1 : 0 } };
+      await sendLocalCommand(device.localIp, "SET", "Appliance.Control.Toggle", payload);
+    }
+    device.isOn = turnOn;
+    console.log(`[MerossService] Toggled ${device.name} channel ${channel} to ${turnOn ? "ON" : "OFF"} (local)`);
+    return true;
+  } catch (err) {
+    const errMsg = `Toggle failed for ${device.name}: ${err instanceof Error ? err.message : err}`;
+    connectionError = errMsg;
+    console.log(`[MerossService] ${errMsg}`);
+    throw new Error(errMsg);
+  }
 }
 
 export async function merossGetStatus(deviceId: string): Promise<{ isOn: boolean }> {
-  const device = connectedDevices.get(deviceId);
+  const device = discoveredDevices.find(d => d.deviceId === deviceId);
   if (!device) {
-    throw new Error(`Device ${deviceId} not found or not connected`);
+    throw new Error(`Device ${deviceId} not found`);
   }
 
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error("Status check timed out after 10 seconds"));
-    }, 10000);
-
-    device.getOnOff((err: any, onOff: any) => {
-      clearTimeout(timeout);
-      if (err) {
-        reject(new Error(err?.message || "Status check failed"));
-      } else {
-        resolve({ isOn: !!onOff });
+  if (device.localIp) {
+    try {
+      const allData = await sendLocalCommand(device.localIp, "GET", "Appliance.System.All", {});
+      if (allData?.payload?.all?.digest?.togglex) {
+        const togglex = allData.payload.all.digest.togglex;
+        const ch0 = togglex.find((t: any) => t.channel === 0);
+        device.isOn = ch0 ? !!ch0.onoff : false;
+      } else if (allData?.payload?.all?.digest?.toggle) {
+        device.isOn = !!allData.payload.all.digest.toggle.onoff;
       }
-    });
-  });
+      return { isOn: device.isOn };
+    } catch (err) {
+      console.log(`[MerossService] Could not get status for ${device.name}: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  return { isOn: device.isOn };
 }
 
 export async function merossLogout(): Promise<void> {
-  if (merossInstance) {
+  if (token) {
     try {
-      merossInstance.disconnectAll(true);
+      await cloudRequest("/v1/Profile/logout", {});
     } catch (err) {
-      console.log("[MerossService] Error during disconnect:", err);
+      console.log("[MerossService] Logout request error:", err instanceof Error ? err.message : err);
     }
-    merossInstance = null;
   }
-  connectedDevices.clear();
+  token = "";
+  key = "";
+  userId = "";
+  discoveredDevices = [];
   isConnected = false;
   connectionError = null;
 }
@@ -198,19 +312,19 @@ export function getMerossError(): string | null {
 }
 
 export function getConnectedDeviceIds(): string[] {
-  return Array.from(connectedDevices.keys());
+  return discoveredDevices.map(d => d.deviceId);
 }
 
 export async function autoConnectMeross(): Promise<void> {
   const email = await storage.getSetting("meross_email");
   const password = await storage.getSetting("meross_password");
-  
+
   if (email && password) {
     console.log("[MerossService] Auto-connecting with saved credentials...");
     try {
       const devices = await merossLogin(email, password);
       console.log(`[MerossService] Auto-connected, found ${devices.length} devices`);
-      
+
       for (const dev of devices) {
         const existing = await storage.getSmartPlugByDeviceId(dev.deviceId);
         if (existing) {
