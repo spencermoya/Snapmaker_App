@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Power, Plug, RefreshCw } from "lucide-react";
+import { Power, Plug, RefreshCw, AlertCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -63,25 +63,29 @@ export default function SmartPlugControl() {
             data-testid={`card-plug-${plug.id}`}
           >
             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-full ${plug.isOn ? "bg-green-500/20 text-green-400" : "bg-secondary/40 text-muted-foreground"}`}>
-                <Power className="h-4 w-4" />
+              <div className={`p-2 rounded-full ${plug.localIp ? (plug.isOn ? "bg-green-500/20 text-green-400" : "bg-secondary/40 text-muted-foreground") : "bg-amber-500/20 text-amber-400"}`}>
+                {plug.localIp ? <Power className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
               </div>
               <div>
                 <p className="text-sm font-medium" data-testid={`text-plug-name-${plug.id}`}>{plug.name}</p>
-                <p className="text-xs text-muted-foreground">{plug.model || "Smart Plug"}</p>
+                {plug.localIp ? (
+                  <p className="text-xs text-muted-foreground">{plug.model || "Smart Plug"}</p>
+                ) : (
+                  <p className="text-xs text-amber-400" data-testid={`text-plug-noip-${plug.id}`}>Set IP in Settings to control</p>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2">
               <span className={`text-xs font-medium ${plug.isOn ? "text-green-400" : "text-muted-foreground"}`}
                 data-testid={`text-plug-status-${plug.id}`}>
-                {plug.isOn ? "ON" : "OFF"}
+                {plug.localIp ? (plug.isOn ? "ON" : "OFF") : ""}
               </span>
               <Switch
                 checked={plug.isOn ?? false}
                 onCheckedChange={(checked) => {
                   toggleMutation.mutate({ plugId: plug.id, turnOn: checked });
                 }}
-                disabled={toggleMutation.isPending}
+                disabled={toggleMutation.isPending || !plug.localIp}
                 data-testid={`switch-plug-${plug.id}`}
               />
             </div>

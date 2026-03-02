@@ -72,6 +72,7 @@ export const smartPlugs = pgTable("smart_plugs", {
   deviceType: text("device_type"),
   channel: integer("channel").default(0),
   isOn: boolean("is_on").default(false),
+  localIp: text("local_ip"),
   lastSeen: timestamp("last_seen"),
   createdAt: timestamp("created_at").defaultNow(),
 });

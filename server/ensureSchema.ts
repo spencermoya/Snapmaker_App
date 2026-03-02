@@ -183,6 +183,11 @@ const REQUIRED_COLUMNS = [
     column: "created_at",
     addSQL: "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()",
   },
+  {
+    table: "smart_plugs",
+    column: "local_ip",
+    addSQL: "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS local_ip TEXT",
+  },
 ];
 
 const COLUMNS_TO_DROP = [

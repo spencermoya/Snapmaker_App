@@ -192,7 +192,8 @@ export async function merossLogin(email: string, password: string): Promise<Mero
 
   if (Array.isArray(deviceList)) {
     for (const dev of deviceList) {
-      const deviceIp = dev.reservedDomain || null;
+      const existingPlug = await storage.getSmartPlugByDeviceId(dev.uuid);
+      const deviceIp = existingPlug?.localIp || null;
 
       const device: MerossDeviceInfo = {
         deviceId: dev.uuid,
@@ -223,7 +224,7 @@ export async function merossLogin(email: string, password: string): Promise<Mero
       }
 
       devices.push(device);
-      console.log(`[MerossService] Device discovered: ${device.name} (${device.deviceId}) IP: ${deviceIp || "unknown"}`);
+      console.log(`[MerossService] Device discovered: ${device.name} (${device.deviceId}) IP: ${deviceIp || "not configured"}`);
     }
   }
 
@@ -241,9 +242,7 @@ export async function merossToggle(deviceId: string, channel: number, turnOn: bo
   }
 
   if (!device.localIp) {
-    const errMsg = `No local IP known for device ${device.name} - cannot send toggle command`;
-    connectionError = errMsg;
-    throw new Error(errMsg);
+    throw new Error(`No local IP configured for "${device.name}". Go to Settings and enter the device's IP address.`);
   }
 
   try {
@@ -316,6 +315,14 @@ export function getMerossError(): string | null {
 
 export function getConnectedDeviceIds(): string[] {
   return discoveredDevices.map(d => d.deviceId);
+}
+
+export function updateDeviceLocalIp(deviceId: string, localIp: string | null): void {
+  const device = discoveredDevices.find(d => d.deviceId === deviceId);
+  if (device) {
+    device.localIp = localIp;
+    console.log(`[MerossService] Updated local IP for ${device.name}: ${localIp || "cleared"}`);
+  }
 }
 
 export async function autoConnectMeross(): Promise<void> {
