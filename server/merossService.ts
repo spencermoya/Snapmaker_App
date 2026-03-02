@@ -182,14 +182,17 @@ export async function merossLogin(email: string, password: string): Promise<Mero
   token = loginResponse.token;
   key = loginResponse.key;
   userId = String(loginResponse.userid);
-  console.log("[MerossService] Login successful, fetching device list...");
+  console.log(`[MerossService] Login successful (domain: ${httpDomain}), fetching device list...`);
 
   const deviceList = await cloudRequest("/v1/Device/devList", {});
   const devices: MerossDeviceInfo[] = [];
 
+  console.log(`[MerossService] Device list type: ${typeof deviceList}, isArray: ${Array.isArray(deviceList)}, length: ${Array.isArray(deviceList) ? deviceList.length : 'N/A'}`);
+  console.log(`[MerossService] Device list raw: ${JSON.stringify(deviceList)?.substring(0, 1000)}`);
+
   if (Array.isArray(deviceList)) {
     for (const dev of deviceList) {
-      const deviceIp = dev.domain || null;
+      const deviceIp = dev.reservedDomain || null;
 
       const device: MerossDeviceInfo = {
         deviceId: dev.uuid,
