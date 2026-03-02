@@ -1,6 +1,6 @@
-import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, type SmartPlug, type InsertSmartPlug, type PrinterStats, type PushSubscription, printers, printJobs, dashboardPreferences, uploadedFiles, appSettings, smartPlugs, printerStats, pushSubscriptions, DEFAULT_ENABLED_MODULES } from "@shared/schema";
+import { type Printer, type InsertPrinter, type DashboardPreferences, type UploadedFile, type InsertUploadedFile, type SmartPlug, type InsertSmartPlug, type PrinterStats, type PushSubscription, type ScheduledPrint, type InsertScheduledPrint, printers, printJobs, dashboardPreferences, uploadedFiles, appSettings, smartPlugs, printerStats, pushSubscriptions, scheduledPrints, DEFAULT_ENABLED_MODULES } from "@shared/schema";
 import { db } from "./db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, lte } from "drizzle-orm";
 
 export interface IStorage {
   getPrinter(id: number): Promise<Printer | undefined>;
@@ -19,7 +19,7 @@ export interface IStorage {
   setSetting(key: string, value: string | null): Promise<void>;
   getAllSmartPlugs(): Promise<SmartPlug[]>;
   getSmartPlug(id: number): Promise<SmartPlug | undefined>;
-  getSmartPlugByNodeId(nodeId: string): Promise<SmartPlug | undefined>;
+  getSmartPlugByDeviceId(deviceId: string): Promise<SmartPlug | undefined>;
   createSmartPlug(plug: InsertSmartPlug): Promise<SmartPlug>;
   updateSmartPlug(id: number, data: Partial<SmartPlug>): Promise<SmartPlug | undefined>;
   deleteSmartPlug(id: number): Promise<void>;
@@ -31,6 +31,12 @@ export interface IStorage {
   getAllPushSubscriptions(): Promise<PushSubscription[]>;
   addPushSubscription(endpoint: string, p256dh: string, auth: string): Promise<PushSubscription>;
   deletePushSubscription(endpoint: string): Promise<boolean>;
+  createScheduledPrint(print: InsertScheduledPrint): Promise<ScheduledPrint>;
+  getScheduledPrints(printerId: number): Promise<ScheduledPrint[]>;
+  getAllScheduledPrints(): Promise<ScheduledPrint[]>;
+  getPendingScheduledPrints(): Promise<ScheduledPrint[]>;
+  updateScheduledPrint(id: number, data: Partial<ScheduledPrint>): Promise<ScheduledPrint | undefined>;
+  deleteScheduledPrint(id: number): Promise<boolean>;
 }
 
 export class DbStorage implements IStorage {
@@ -160,8 +166,8 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
-  async getSmartPlugByNodeId(nodeId: string): Promise<SmartPlug | undefined> {
-    const result = await db.select().from(smartPlugs).where(eq(smartPlugs.nodeId, nodeId)).limit(1);
+  async getSmartPlugByDeviceId(deviceId: string): Promise<SmartPlug | undefined> {
+    const result = await db.select().from(smartPlugs).where(eq(smartPlugs.deviceId, deviceId)).limit(1);
     return result[0];
   }
 
@@ -256,6 +262,37 @@ export class DbStorage implements IStorage {
 
   async deletePushSubscription(endpoint: string): Promise<boolean> {
     const result = await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint)).returning();
+    return result.length > 0;
+  }
+
+  async createScheduledPrint(print: InsertScheduledPrint): Promise<ScheduledPrint> {
+    const result = await db.insert(scheduledPrints).values(print).returning();
+    return result[0]!;
+  }
+
+  async getScheduledPrints(printerId: number): Promise<ScheduledPrint[]> {
+    return await db.select().from(scheduledPrints).where(eq(scheduledPrints.printerId, printerId));
+  }
+
+  async getAllScheduledPrints(): Promise<ScheduledPrint[]> {
+    return await db.select().from(scheduledPrints);
+  }
+
+  async getPendingScheduledPrints(): Promise<ScheduledPrint[]> {
+    return await db.select().from(scheduledPrints)
+      .where(and(
+        eq(scheduledPrints.status, "pending"),
+        lte(scheduledPrints.scheduledAt, new Date())
+      ));
+  }
+
+  async updateScheduledPrint(id: number, data: Partial<ScheduledPrint>): Promise<ScheduledPrint | undefined> {
+    const result = await db.update(scheduledPrints).set(data).where(eq(scheduledPrints.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteScheduledPrint(id: number): Promise<boolean> {
+    const result = await db.delete(scheduledPrints).where(eq(scheduledPrints.id, id)).returning();
     return result.length > 0;
   }
 }

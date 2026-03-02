@@ -1,6 +1,7 @@
 import { storage } from "./storage";
 import type { Printer, PrinterStatus } from "@shared/schema";
 import { notifyPrintComplete, notifyPrinterDisconnected, notifyPrinterOnline, isPushEnabled } from "./pushService";
+import { merossToggle, isMerossConnected, merossLogin } from "./merossService";
 
 const SNAPMAKER_PORT = 8080;
 const POLL_INTERVAL_CONNECTED = 5000;
@@ -337,12 +338,181 @@ async function pollPrinter(printer: Printer): Promise<void> {
   }
 }
 
+async function executeScheduledPrint(scheduledId: number, printerId: number, fileId: number | null, filename: string, plugId: number | null, powerOnPlug: boolean): Promise<void> {
+  console.log(`[BackgroundService] Executing scheduled print #${scheduledId}: ${filename}`);
+  
+  await storage.updateScheduledPrint(scheduledId, { status: "running", executedAt: new Date() });
+
+  try {
+    if (powerOnPlug && plugId) {
+      const plug = await storage.getSmartPlug(plugId);
+      if (plug) {
+        console.log(`[BackgroundService] Powering on smart plug: ${plug.name}`);
+        
+        if (!isMerossConnected()) {
+          const email = await storage.getSetting("meross_email");
+          const password = await storage.getSetting("meross_password");
+          if (email && password) {
+            await merossLogin(email, password);
+          }
+        }
+        
+        if (isMerossConnected()) {
+          await merossToggle(plug.deviceId, plug.channel ?? 0, true);
+          await storage.updateSmartPlug(plug.id, { isOn: true, lastSeen: new Date() });
+          console.log(`[BackgroundService] Waiting 30s for printer to boot...`);
+          await new Promise(resolve => setTimeout(resolve, 30000));
+        } else {
+          console.log(`[BackgroundService] Meross not connected, skipping plug power-on`);
+        }
+      }
+    }
+
+    const printer = await storage.getPrinter(printerId);
+    if (!printer) {
+      throw new Error("Printer not found");
+    }
+
+    const isOnline = await checkPrinterOnline(printer.ipAddress);
+    if (!isOnline) {
+      throw new Error("Printer is not reachable on the network");
+    }
+
+    if (!printer.isConnected || !printer.token) {
+      if (printer.token) {
+        const reconnected = await attemptReconnect(printer);
+        if (!reconnected) {
+          throw new Error("Could not connect to printer - reconnection failed");
+        }
+      } else {
+        throw new Error("Printer has no saved token - manual connection required first");
+      }
+    }
+
+    const currentPrinter = await storage.getPrinter(printerId);
+    if (!currentPrinter?.token) {
+      throw new Error("Printer lost connection during scheduled print setup");
+    }
+
+    if (!fileId) {
+      throw new Error("No file ID associated with this scheduled print");
+    }
+
+    const file = await storage.getUploadedFile(fileId, printerId);
+    if (!file || !file.fileContent) {
+      throw new Error("File not found or has no content");
+    }
+
+    const boundary = "----WebKitFormBoundary" + Math.random().toString(36).substring(2);
+    const parts: string[] = [];
+    parts.push(`--${boundary}\r\n`);
+    parts.push(`Content-Disposition: form-data; name="token"\r\n\r\n`);
+    parts.push(`${currentPrinter.token}\r\n`);
+    parts.push(`--${boundary}\r\n`);
+    parts.push(`Content-Disposition: form-data; name="file"; filename="${file.filename}"\r\n`);
+    parts.push(`Content-Type: application/octet-stream\r\n\r\n`);
+    parts.push(file.fileContent);
+    parts.push(`\r\n--${boundary}--\r\n`);
+    const body = parts.join("");
+
+    const uploadUrl = `http://${currentPrinter.ipAddress}:${SNAPMAKER_PORT}/api/v1/upload`;
+    const uploadResp = await fetch(uploadUrl, {
+      method: "POST",
+      headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
+      body,
+      signal: AbortSignal.timeout(120000),
+    });
+
+    if (!uploadResp.ok) {
+      throw new Error(`File upload failed: ${uploadResp.status}`);
+    }
+
+    const execUrl = `http://${currentPrinter.ipAddress}:${SNAPMAKER_PORT}/api/v1/execute_code`;
+    const filePath = `wifiTransfer/${file.filename}`;
+
+    const selectParams = new URLSearchParams();
+    selectParams.append("token", currentPrinter.token);
+    selectParams.append("code", `M23 ${filePath}`);
+    const selectResp = await fetch(execUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: selectParams.toString(),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!selectResp.ok) {
+      throw new Error(`Failed to select file: ${selectResp.status}`);
+    }
+
+    const startParams = new URLSearchParams();
+    startParams.append("token", currentPrinter.token);
+    startParams.append("code", "M24");
+    const startResp = await fetch(execUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: startParams.toString(),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!startResp.ok) {
+      throw new Error(`Failed to start print: ${startResp.status}`);
+    }
+
+    await storage.updateScheduledPrint(scheduledId, { status: "completed" });
+    console.log(`[BackgroundService] Scheduled print #${scheduledId} started successfully`);
+
+    if (isPushEnabled()) {
+      const { sendPushNotification } = await import("./pushService");
+      sendPushNotification({
+        title: "Scheduled Print Started",
+        body: `${filename} has started printing`,
+        data: { type: "scheduled_print_started", filename },
+      }).catch(err => console.log("[BackgroundService] Push notification error:", err));
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : "Unknown error";
+    console.error(`[BackgroundService] Scheduled print #${scheduledId} failed:`, errorMsg);
+    await storage.updateScheduledPrint(scheduledId, { 
+      status: "failed", 
+      errorMessage: errorMsg 
+    });
+
+    if (isPushEnabled()) {
+      const { sendPushNotification } = await import("./pushService");
+      sendPushNotification({
+        title: "Scheduled Print Failed",
+        body: `${filename} failed: ${errorMsg}`,
+        data: { type: "scheduled_print_failed", filename },
+      }).catch(err => console.log("[BackgroundService] Push notification error:", err));
+    }
+  }
+}
+
+async function checkScheduledPrints(): Promise<void> {
+  try {
+    const pendingPrints = await storage.getPendingScheduledPrints();
+    
+    for (const print of pendingPrints) {
+      await executeScheduledPrint(
+        print.id,
+        print.printerId,
+        print.fileId,
+        print.filename,
+        print.plugId,
+        print.powerOnPlug ?? false
+      );
+    }
+  } catch (error) {
+    console.error("[BackgroundService] Error checking scheduled prints:", error);
+  }
+}
+
 async function pollAllPrinters(): Promise<void> {
   try {
     const printers = await storage.getAllPrinters();
     console.log(`[BackgroundService] Polling ${printers.length} printer(s)...`);
     
     await Promise.all(printers.map(printer => pollPrinter(printer)));
+    
+    await checkScheduledPrints();
   } catch (error) {
     console.error("[BackgroundService] Poll error:", error);
   }

@@ -7,9 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Plus, Trash2, Wifi, WifiOff, ArrowLeft, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Bell, Camera, Loader2, Search, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Trash2, Wifi, WifiOff, ArrowLeft, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Bell, Camera, Loader2, Search, ChevronDown, ChevronUp, Plug, Power } from "lucide-react";
 import { useLocation } from "wouter";
-import type { Printer } from "@shared/schema";
+import type { Printer, SmartPlug } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
 
 interface SettingsData {
   watchFolder: {
@@ -52,6 +53,10 @@ export default function Settings() {
   const [lubanProxyIp, setLubanProxyIp] = useState("");
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const queryClient = useQueryClient();
+
+  const [merossEmail, setMerossEmail] = useState("");
+  const [merossPassword, setMerossPassword] = useState("");
+  const [merossConnecting, setMerossConnecting] = useState(false);
 
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [pushSupported, setPushSupported] = useState(false);
@@ -497,6 +502,57 @@ export default function Settings() {
       toast.error("Failed to send test notification");
     } finally {
       setPushTestLoading(false);
+    }
+  };
+
+  const { data: merossStatus, refetch: refetchMeross } = useQuery<{
+    connected: boolean;
+    email: string | null;
+    devices: SmartPlug[];
+  }>({
+    queryKey: ["/api/meross/status"],
+    refetchInterval: 15000,
+  });
+
+  const handleMerossLogin = async () => {
+    if (!merossEmail.trim() || !merossPassword.trim()) {
+      toast.error("Please enter your Meross email and password");
+      return;
+    }
+    setMerossConnecting(true);
+    try {
+      const res = await apiRequest("POST", "/api/meross/login", {
+        email: merossEmail,
+        password: merossPassword,
+      });
+      const data = await res.json();
+      toast.success(`Connected! Found ${data.devices?.length || 0} device(s)`);
+      setMerossEmail("");
+      setMerossPassword("");
+      refetchMeross();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to connect to Meross");
+    } finally {
+      setMerossConnecting(false);
+    }
+  };
+
+  const handleMerossLogout = async () => {
+    try {
+      await apiRequest("DELETE", "/api/meross/logout");
+      toast.success("Disconnected from Meross");
+      refetchMeross();
+    } catch {
+      toast.error("Failed to disconnect");
+    }
+  };
+
+  const handleMerossToggle = async (plugId: number, turnOn: boolean) => {
+    try {
+      await apiRequest("POST", `/api/meross/devices/${plugId}/toggle`, { turnOn });
+      refetchMeross();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to toggle plug");
     }
   };
 
@@ -1345,6 +1401,115 @@ export default function Settings() {
                   <li>Notification permission granted</li>
                 </ul>
               </div>
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-6 bg-secondary/20 border-border">
+          <div className="flex items-center gap-2 mb-4">
+            <Plug className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold">Smart Plug (Meross)</h2>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            Connect your Meross smart plugs to control printer power remotely and automate power-on for scheduled prints.
+          </p>
+
+          {merossStatus?.connected ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-green-400" />
+                  <div>
+                    <p className="text-sm font-medium text-green-400">Connected</p>
+                    <p className="text-xs text-muted-foreground">{merossStatus.email}</p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleMerossLogout}
+                  className="text-destructive border-destructive/50 hover:bg-destructive/10"
+                  data-testid="button-meross-logout"
+                >
+                  Disconnect
+                </Button>
+              </div>
+
+              {merossStatus.devices && merossStatus.devices.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Discovered Devices</p>
+                  {merossStatus.devices.map((plug) => (
+                    <div
+                      key={plug.id}
+                      className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg"
+                      data-testid={`card-settings-plug-${plug.id}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`p-1.5 rounded-full ${plug.isOn ? "bg-green-500/20 text-green-400" : "bg-secondary/40 text-muted-foreground"}`}>
+                          <Power className="h-3.5 w-3.5" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium">{plug.name}</p>
+                          <p className="text-xs text-muted-foreground">{plug.model || "Smart Plug"}</p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={plug.isOn ?? false}
+                        onCheckedChange={(checked) => handleMerossToggle(plug.id, checked)}
+                        data-testid={`switch-settings-plug-${plug.id}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No smart plug devices found on your Meross account.</p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="meross-email" className="text-sm">Meross Account Email</Label>
+                <Input
+                  id="meross-email"
+                  type="email"
+                  placeholder="your@email.com"
+                  value={merossEmail}
+                  onChange={(e) => setMerossEmail(e.target.value)}
+                  data-testid="input-meross-email"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="meross-password" className="text-sm">Password</Label>
+                <Input
+                  id="meross-password"
+                  type="password"
+                  placeholder="Your Meross password"
+                  value={merossPassword}
+                  onChange={(e) => setMerossPassword(e.target.value)}
+                  data-testid="input-meross-password"
+                />
+              </div>
+              <Button
+                onClick={handleMerossLogin}
+                disabled={merossConnecting || !merossEmail || !merossPassword}
+                className="w-full"
+                data-testid="button-meross-connect"
+              >
+                {merossConnecting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    <Plug className="h-4 w-4 mr-2" />
+                    Connect to Meross
+                  </>
+                )}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Your Meross credentials are stored locally and only used to communicate with the Meross cloud service.
+              </p>
             </div>
           )}
         </Card>

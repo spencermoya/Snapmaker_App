@@ -95,13 +95,10 @@ const REQUIRED_TABLES = [
       CREATE TABLE IF NOT EXISTS smart_plugs (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
-        node_id TEXT NOT NULL UNIQUE,
-        vendor_id TEXT,
-        product_id TEXT,
+        device_id TEXT NOT NULL UNIQUE,
+        model TEXT,
         device_type TEXT,
-        ip_address TEXT,
-        pairing_code TEXT,
-        is_paired BOOLEAN DEFAULT false,
+        channel INTEGER DEFAULT 0,
         is_on BOOLEAN DEFAULT false,
         last_seen TIMESTAMP,
         created_at TIMESTAMP DEFAULT NOW()
@@ -117,6 +114,24 @@ const REQUIRED_TABLES = [
         p256dh TEXT NOT NULL,
         auth TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT NOW()
+      )
+    `,
+  },
+  {
+    name: "scheduled_prints",
+    createSQL: `
+      CREATE TABLE IF NOT EXISTS scheduled_prints (
+        id SERIAL PRIMARY KEY,
+        printer_id INTEGER NOT NULL REFERENCES printers(id),
+        file_id INTEGER REFERENCES uploaded_files(id),
+        filename TEXT NOT NULL,
+        scheduled_at TIMESTAMP NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        power_on_plug BOOLEAN DEFAULT false,
+        plug_id INTEGER,
+        created_at TIMESTAMP DEFAULT NOW(),
+        executed_at TIMESTAMP,
+        error_message TEXT
       )
     `,
   },
@@ -143,10 +158,46 @@ const COLUMNS_TO_DROP = [
   },
 ];
 
+const SMART_PLUGS_MIGRATION_SQL = `
+DO $$
+BEGIN
+  -- Migrate smart_plugs from old Matter schema to new Meross schema
+  IF EXISTS (
+    SELECT FROM information_schema.columns 
+    WHERE table_name = 'smart_plugs' AND column_name = 'node_id'
+  ) AND NOT EXISTS (
+    SELECT FROM information_schema.columns 
+    WHERE table_name = 'smart_plugs' AND column_name = 'device_id'
+  ) THEN
+    -- Old schema detected, recreate table (no important data to preserve)
+    DROP TABLE smart_plugs CASCADE;
+    CREATE TABLE smart_plugs (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      device_id TEXT NOT NULL UNIQUE,
+      model TEXT,
+      device_type TEXT,
+      channel INTEGER DEFAULT 0,
+      is_on BOOLEAN DEFAULT false,
+      last_seen TIMESTAMP,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+    RAISE NOTICE 'Migrated smart_plugs table from Matter to Meross schema';
+  END IF;
+END $$;
+`;
+
 export async function ensureSchema(): Promise<void> {
   const client = await pool.connect();
   
   try {
+    // Run smart_plugs migration from Matter to Meross schema
+    try {
+      await client.query(SMART_PLUGS_MIGRATION_SQL);
+    } catch (error) {
+      log(`[Schema] Warning during smart_plugs migration: ${error}`, "db");
+    }
+
     for (const table of REQUIRED_TABLES) {
       const result = await client.query(`
         SELECT EXISTS (

@@ -11,6 +11,7 @@ import { getVapidPublicKey, isPushEnabled } from "./pushService";
 import { startStream, stopStream, getStreamInfo, getHlsDirectory, playlistExists } from "./streamService";
 import { fetchWithAuth } from "./digestAuth";
 import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } from "@shared/schema";
+import { merossLogin, merossToggle, merossGetStatus, merossLogout, isMerossConnected, autoConnectMeross } from "./merossService";
 import { z } from "zod";
 
 const upload = multer({ 
@@ -1885,6 +1886,232 @@ export async function registerRoutes(
     }
   });
 
+  // === Meross Smart Plug Routes ===
+
+  app.post("/api/meross/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: "Email and password are required" });
+      }
+
+      await storage.setSetting("meross_email", email);
+      await storage.setSetting("meross_password", password);
+
+      const devices = await merossLogin(email, password);
+
+      for (const dev of devices) {
+        const existing = await storage.getSmartPlugByDeviceId(dev.deviceId);
+        if (existing) {
+          await storage.updateSmartPlug(existing.id, {
+            name: dev.name,
+            model: dev.model,
+            deviceType: dev.deviceType,
+            isOn: dev.isOn,
+            lastSeen: new Date(),
+          });
+        } else {
+          await storage.createSmartPlug({
+            name: dev.name,
+            deviceId: dev.deviceId,
+            model: dev.model,
+            deviceType: dev.deviceType,
+            channel: 0,
+            isOn: dev.isOn,
+          });
+        }
+      }
+
+      const plugs = await storage.getAllSmartPlugs();
+      res.json({ connected: true, devices: plugs });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to connect to Meross",
+      });
+    }
+  });
+
+  app.get("/api/meross/status", async (_req, res) => {
+    try {
+      const connected = isMerossConnected();
+      const plugs = await storage.getAllSmartPlugs();
+      const email = await storage.getSetting("meross_email");
+      res.json({ connected, email, devices: plugs });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get Meross status" });
+    }
+  });
+
+  app.get("/api/meross/devices", async (_req, res) => {
+    try {
+      const plugs = await storage.getAllSmartPlugs();
+      res.json(plugs);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get devices" });
+    }
+  });
+
+  app.post("/api/meross/devices/:id/toggle", async (req, res) => {
+    try {
+      const plugId = parseInt(req.params.id);
+      const { turnOn } = req.body;
+      
+      const plug = await storage.getSmartPlug(plugId);
+      if (!plug) {
+        return res.status(404).json({ error: "Smart plug not found" });
+      }
+
+      if (!isMerossConnected()) {
+        const email = await storage.getSetting("meross_email");
+        const password = await storage.getSetting("meross_password");
+        if (email && password) {
+          await merossLogin(email, password);
+        } else {
+          return res.status(400).json({ error: "Meross not connected. Please log in first." });
+        }
+      }
+
+      const on = turnOn !== undefined ? !!turnOn : !plug.isOn;
+      await merossToggle(plug.deviceId, plug.channel ?? 0, on);
+      
+      const updated = await storage.updateSmartPlug(plugId, { 
+        isOn: on, 
+        lastSeen: new Date() 
+      });
+      
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to toggle plug",
+      });
+    }
+  });
+
+  app.get("/api/meross/devices/:id/status", async (req, res) => {
+    try {
+      const plugId = parseInt(req.params.id);
+      const plug = await storage.getSmartPlug(plugId);
+      if (!plug) {
+        return res.status(404).json({ error: "Smart plug not found" });
+      }
+
+      if (isMerossConnected()) {
+        try {
+          const status = await merossGetStatus(plug.deviceId);
+          await storage.updateSmartPlug(plugId, { 
+            isOn: status.isOn, 
+            lastSeen: new Date() 
+          });
+          const updated = await storage.getSmartPlug(plugId);
+          return res.json(updated);
+        } catch {
+          return res.json(plug);
+        }
+      }
+
+      res.json(plug);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get device status" });
+    }
+  });
+
+  app.delete("/api/meross/logout", async (_req, res) => {
+    try {
+      await merossLogout();
+      await storage.setSetting("meross_email", null);
+      await storage.setSetting("meross_password", null);
+      
+      const plugs = await storage.getAllSmartPlugs();
+      for (const plug of plugs) {
+        await storage.deleteSmartPlug(plug.id);
+      }
+      
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to disconnect" });
+    }
+  });
+
+  // === Scheduled Prints Routes ===
+
+  app.post("/api/printers/:id/schedule-print", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const printer = await storage.getPrinter(printerId);
+      if (!printer) {
+        return res.status(404).json({ error: "Printer not found" });
+      }
+
+      const { fileId, scheduledAt, powerOnPlug, plugId } = req.body;
+      
+      if (!fileId || !scheduledAt) {
+        return res.status(400).json({ error: "fileId and scheduledAt are required" });
+      }
+
+      const file = await storage.getUploadedFile(parseInt(fileId), printerId);
+      if (!file) {
+        return res.status(404).json({ error: "File not found" });
+      }
+
+      const scheduledDate = new Date(scheduledAt);
+      if (isNaN(scheduledDate.getTime()) || scheduledDate <= new Date()) {
+        return res.status(400).json({ error: "scheduledAt must be a valid future date/time" });
+      }
+
+      const scheduled = await storage.createScheduledPrint({
+        printerId,
+        fileId: file.id,
+        filename: file.displayName || file.filename,
+        scheduledAt: scheduledDate,
+        status: "pending",
+        powerOnPlug: !!powerOnPlug,
+        plugId: plugId ? parseInt(plugId) : null,
+      });
+
+      res.json(scheduled);
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to schedule print",
+      });
+    }
+  });
+
+  app.get("/api/printers/:id/scheduled-prints", async (req, res) => {
+    try {
+      const printerId = parseInt(req.params.id);
+      const prints = await storage.getScheduledPrints(printerId);
+      res.json(prints);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get scheduled prints" });
+    }
+  });
+
+  app.delete("/api/scheduled-prints/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const print = await storage.getAllScheduledPrints().then(
+        prints => prints.find(p => p.id === id)
+      );
+      
+      if (!print) {
+        return res.status(404).json({ error: "Scheduled print not found" });
+      }
+
+      if (print.status === "running") {
+        return res.status(400).json({ error: "Cannot cancel a print that is currently running" });
+      }
+
+      if (print.status === "pending") {
+        await storage.updateScheduledPrint(id, { status: "cancelled" });
+      }
+      
+      const deleted = await storage.deleteScheduledPrint(id);
+      res.json({ success: deleted });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete scheduled print" });
+    }
+  });
+
   // Initialize file watcher and Luban proxy on startup
   initializeWatcher().catch((err) => {
     console.error("Failed to initialize file watcher:", err);
@@ -1892,6 +2119,10 @@ export async function registerRoutes(
 
   initializeLubanProxy().catch((err) => {
     console.error("Failed to initialize Luban proxy:", err);
+  });
+
+  autoConnectMeross().catch((err) => {
+    console.error("Failed to auto-connect Meross:", err);
   });
 
   return httpServer;

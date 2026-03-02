@@ -77,7 +77,22 @@ shared/           # Shared code between frontend/backend
   - Watch folder: Configure a local folder path in Settings; new G-code files are auto-imported (uses `server/fileWatcher.ts`)
   - Luban auto-capture: Proxy server intercepts Luban uploads, captures files automatically, and forwards to printer (uses `server/lubanProxy.ts`)
 - **Luban token capture**: When Luban connects through the proxy, the app captures and saves Luban's authentication token. This token is then used for prompt-free connections - no touchscreen confirmation needed after the first Luban connection.
-- Customizable dashboard: Users can toggle modules (status, webcam, temperature, stats, jog controls, job controls, file list) on/off via the customize panel
+- Customizable dashboard: Users can toggle modules (status, webcam, temperature, stats, jog controls, job controls, file list, smart plug, scheduled prints) on/off via the customize panel
+- **Meross smart plug control**: Integration with Meross cloud API for controlling smart plugs
+  - Login with Meross account email/password in Settings
+  - Auto-discovers all Meross devices on the account
+  - Toggle plugs on/off from dashboard widget or Settings page
+  - Credentials stored in appSettings table, auto-reconnects on server restart
+  - Uses `server/merossService.ts` with `meross-cloud` npm package (MQTT-based)
+  - Smart plug data stored in `smart_plugs` database table (deviceId, model, channel, isOn)
+- **Scheduled prints**: Schedule G-code files to print at a future date/time
+  - Schedule from file list (clock icon) or file preview dialog
+  - Optional "power on smart plug" before printing (with 30s boot delay)
+  - Background service checks for due prints every poll cycle
+  - Execution flow: power on plug → wait for boot → connect to printer → upload file → M23/M24 → start print
+  - Push notifications sent when scheduled prints start or fail
+  - Scheduled print data stored in `scheduled_prints` database table
+  - Dashboard widget shows pending/running/completed/failed prints with status
 - **Push notifications**: Web Push API integration for alerts when app is closed
   - Requires VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_EMAIL environment variables
   - Notifications sent for: print completed, printer disconnected, printer back online

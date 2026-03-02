@@ -67,16 +67,27 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
 export const smartPlugs = pgTable("smart_plugs", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  nodeId: text("node_id").notNull().unique(),
-  vendorId: text("vendor_id"),
-  productId: text("product_id"),
+  deviceId: text("device_id").notNull().unique(),
+  model: text("model"),
   deviceType: text("device_type"),
-  ipAddress: text("ip_address"),
-  pairingCode: text("pairing_code"),
-  isPaired: boolean("is_paired").default(false),
+  channel: integer("channel").default(0),
   isOn: boolean("is_on").default(false),
   lastSeen: timestamp("last_seen"),
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const scheduledPrints = pgTable("scheduled_prints", {
+  id: serial("id").primaryKey(),
+  printerId: integer("printer_id").references(() => printers.id).notNull(),
+  fileId: integer("file_id").references(() => uploadedFiles.id),
+  filename: text("filename").notNull(),
+  scheduledAt: timestamp("scheduled_at").notNull(),
+  status: text("status").notNull().default("pending"),
+  powerOnPlug: boolean("power_on_plug").default(false),
+  plugId: integer("plug_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  executedAt: timestamp("executed_at"),
+  errorMessage: text("error_message"),
 });
 
 export const insertSmartPlugSchema = createInsertSchema(smartPlugs).omit({
@@ -106,6 +117,13 @@ export const insertUploadedFileSchema = createInsertSchema(uploadedFiles).omit({
   uploadedAt: true,
 });
 
+export const insertScheduledPrintSchema = createInsertSchema(scheduledPrints).omit({
+  id: true,
+  createdAt: true,
+  executedAt: true,
+  errorMessage: true,
+});
+
 export const DEFAULT_ENABLED_MODULES = [
   "status",
   "webcam", 
@@ -114,6 +132,8 @@ export const DEFAULT_ENABLED_MODULES = [
   "jogControls",
   "jobControls",
   "fileList",
+  "smartPlug",
+  "scheduledPrints",
 ];
 
 export type Printer = typeof printers.$inferSelect;
@@ -128,6 +148,8 @@ export type SmartPlug = typeof smartPlugs.$inferSelect;
 export type InsertSmartPlug = z.infer<typeof insertSmartPlugSchema>;
 export type PrinterStats = typeof printerStats.$inferSelect;
 export type PushSubscription = typeof pushSubscriptions.$inferSelect;
+export type ScheduledPrint = typeof scheduledPrints.$inferSelect;
+export type InsertScheduledPrint = z.infer<typeof insertScheduledPrintSchema>;
 
 export type PrinterStatus = {
   state: string;

@@ -3,10 +3,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { FileCode, Play, RefreshCw, Upload, Trash2, Info, AlertCircle, X, Calendar, FolderInput, Clock } from "lucide-react";
+import { FileCode, Play, RefreshCw, Upload, Trash2, Info, AlertCircle, X, Calendar, FolderInput, Clock, Plug } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useState, useRef, useCallback, useMemo } from "react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { apiRequest } from "@/lib/queryClient";
+import type { SmartPlug } from "@shared/schema";
 import {
   Dialog,
   DialogContent,
@@ -45,6 +49,12 @@ export default function FileList({ printerId }: FileListProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [previewFile, setPreviewFile] = useState<UploadedFile | null>(null);
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [scheduleFile, setScheduleFile] = useState<UploadedFile | null>(null);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("");
+  const [powerOnPlug, setPowerOnPlug] = useState(false);
+  const [selectedPlugId, setSelectedPlugId] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: files = [], isLoading, error, refetch } = useQuery<UploadedFile[]>({
@@ -107,6 +117,45 @@ export default function FileList({ printerId }: FileListProps) {
     onSuccess: () => {
       toast.success("File removed");
       queryClient.invalidateQueries({ queryKey: [`/api/printers/${printerId}/uploaded-files`] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const { data: merossStatus } = useQuery<{
+    connected: boolean;
+    devices: SmartPlug[];
+  }>({
+    queryKey: ["/api/meross/status"],
+    refetchInterval: 30000,
+  });
+
+  const scheduleMutation = useMutation({
+    mutationFn: async ({ fileId, scheduledAt, powerOnPlug, plugId }: {
+      fileId: number;
+      scheduledAt: string;
+      powerOnPlug: boolean;
+      plugId?: number;
+    }) => {
+      if (!printerId) throw new Error("No printer connected");
+      const res = await apiRequest("POST", `/api/printers/${printerId}/schedule-print`, {
+        fileId,
+        scheduledAt,
+        powerOnPlug,
+        plugId,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success("Print scheduled successfully");
+      setScheduleDialogOpen(false);
+      setScheduleFile(null);
+      setScheduleDate("");
+      setScheduleTime("");
+      setPowerOnPlug(false);
+      setSelectedPlugId("");
+      queryClient.invalidateQueries({ queryKey: [`/api/printers/${printerId}/scheduled-prints`] });
     },
     onError: (error: Error) => {
       toast.error(error.message);
@@ -226,6 +275,29 @@ export default function FileList({ printerId }: FileListProps) {
       default: return source;
     }
   };
+
+  const handleOpenSchedule = useCallback((file: UploadedFile) => {
+    setScheduleFile(file);
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    setScheduleDate(tomorrow.toISOString().split("T")[0]);
+    setScheduleTime("08:00");
+    setPowerOnPlug(false);
+    setSelectedPlugId("");
+    setScheduleDialogOpen(true);
+  }, []);
+
+  const handleSchedulePrint = useCallback(() => {
+    if (!scheduleFile || !scheduleDate || !scheduleTime) return;
+    const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
+    scheduleMutation.mutate({
+      fileId: scheduleFile.id,
+      scheduledAt,
+      powerOnPlug,
+      plugId: powerOnPlug && selectedPlugId ? parseInt(selectedPlugId) : undefined,
+    });
+  }, [scheduleFile, scheduleDate, scheduleTime, powerOnPlug, selectedPlugId, scheduleMutation]);
 
   const handleUpload = () => {
     if (selectedFile) {
@@ -432,6 +504,23 @@ export default function FileList({ printerId }: FileListProps) {
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button 
+                              size="icon" 
+                              variant="ghost" 
+                              className="h-7 w-7 text-yellow-500 hover:text-yellow-500 hover:bg-yellow-500/10"
+                              onClick={() => handleOpenSchedule(file)}
+                              disabled={!file.fileContent}
+                              data-testid={`button-schedule-${file.id}`}
+                            >
+                              <Clock className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Schedule Print</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                       <Button 
                         size="icon" 
                         variant="ghost" 
@@ -532,14 +621,138 @@ export default function FileList({ printerId }: FileListProps) {
               <X className="h-4 w-4 mr-2" />
               Close
             </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (previewFile) {
+                    handleClosePreview();
+                    handleOpenSchedule(previewFile);
+                  }
+                }}
+                disabled={!previewFile?.fileContent}
+                className="flex-1 sm:flex-none border-yellow-500/50 text-yellow-500 hover:bg-yellow-500/10"
+                data-testid="button-schedule-from-preview"
+              >
+                <Clock className="h-4 w-4 mr-2" />
+                Schedule
+              </Button>
+              <Button
+                onClick={handleStartPrint}
+                disabled={printMutation.isPending || !previewFile?.fileContent}
+                className="flex-1 sm:flex-none"
+                data-testid="button-start-print"
+              >
+                <Play className="h-4 w-4 mr-2" />
+                {printMutation.isPending ? "Starting..." : "Start Print"}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={scheduleDialogOpen} onOpenChange={setScheduleDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-yellow-500" />
+              Schedule Print
+            </DialogTitle>
+            <DialogDescription>
+              Set a date and time to automatically start this print.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {scheduleFile && (
+            <div className="space-y-4 py-2">
+              <div className="p-3 rounded-lg bg-secondary/30 border border-secondary/40">
+                <div className="flex items-center gap-2">
+                  <FileCode className="h-4 w-4 text-primary flex-shrink-0" />
+                  <span className="text-sm font-medium truncate" data-testid="text-schedule-filename">
+                    {scheduleFile.displayName || scheduleFile.filename}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="schedule-date" className="text-xs">Date</Label>
+                  <Input
+                    id="schedule-date"
+                    type="date"
+                    value={scheduleDate}
+                    onChange={(e) => setScheduleDate(e.target.value)}
+                    min={new Date().toISOString().split("T")[0]}
+                    data-testid="input-schedule-date"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="schedule-time" className="text-xs">Time</Label>
+                  <Input
+                    id="schedule-time"
+                    type="time"
+                    value={scheduleTime}
+                    onChange={(e) => setScheduleTime(e.target.value)}
+                    data-testid="input-schedule-time"
+                  />
+                </div>
+              </div>
+
+              {merossStatus?.connected && merossStatus.devices?.length > 0 && (
+                <div className="space-y-3 p-3 rounded-lg bg-secondary/30 border border-secondary/40">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="power-on-plug"
+                      checked={powerOnPlug}
+                      onCheckedChange={(checked) => setPowerOnPlug(!!checked)}
+                      data-testid="checkbox-power-on-plug"
+                    />
+                    <Label htmlFor="power-on-plug" className="text-sm flex items-center gap-1.5 cursor-pointer">
+                      <Plug className="h-3.5 w-3.5" />
+                      Power on smart plug before printing
+                    </Label>
+                  </div>
+                  
+                  {powerOnPlug && (
+                    <Select value={selectedPlugId} onValueChange={setSelectedPlugId}>
+                      <SelectTrigger className="w-full" data-testid="select-plug">
+                        <SelectValue placeholder="Select a smart plug" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {merossStatus.devices.map((plug) => (
+                          <SelectItem key={plug.id} value={String(plug.id)}>
+                            {plug.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  
+                  {powerOnPlug && (
+                    <p className="text-[11px] text-muted-foreground">
+                      The plug will turn on 30 seconds before the print starts, giving the printer time to boot up.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
             <Button
-              onClick={handleStartPrint}
-              disabled={printMutation.isPending || !previewFile?.fileContent}
-              className="flex-1 sm:flex-none"
-              data-testid="button-start-print"
+              variant="outline"
+              onClick={() => setScheduleDialogOpen(false)}
             >
-              <Play className="h-4 w-4 mr-2" />
-              {printMutation.isPending ? "Starting..." : "Start Print"}
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSchedulePrint}
+              disabled={!scheduleDate || !scheduleTime || scheduleMutation.isPending || (powerOnPlug && !selectedPlugId)}
+              className="bg-yellow-600 hover:bg-yellow-700 text-white"
+              data-testid="button-confirm-schedule"
+            >
+              <Clock className="h-4 w-4 mr-2" />
+              {scheduleMutation.isPending ? "Scheduling..." : "Schedule Print"}
             </Button>
           </DialogFooter>
         </DialogContent>

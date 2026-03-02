@@ -7,6 +7,8 @@ import JogControls from "@/components/JogControls";
 import FileList from "@/components/FileList";
 import WebcamFeed from "@/components/WebcamFeed";
 import PrinterStats from "@/components/PrinterStats";
+import SmartPlugControl from "@/components/SmartPlugControl";
+import ScheduledPrints from "@/components/ScheduledPrints";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -34,6 +36,8 @@ const MODULE_REGISTRY: ModuleConfig[] = [
   { id: "jogControls", title: "Jog Controls", column: "right" },
   { id: "jobControls", title: "Job Controls", column: "right" },
   { id: "fileList", title: "File List", column: "right" },
+  { id: "smartPlug", title: "Smart Plug", column: "right" },
+  { id: "scheduledPrints", title: "Scheduled Prints", column: "right" },
 ];
 
 const AddPrinterForm = memo(function AddPrinterForm({
@@ -568,6 +572,10 @@ export default function Dashboard() {
         );
       case "fileList":
         return <FileList key={moduleId} printerId={selectedPrinter.id} />;
+      case "smartPlug":
+        return <SmartPlugControl key={moduleId} />;
+      case "scheduledPrints":
+        return <ScheduledPrints key={moduleId} printerId={selectedPrinter.id} />;
       default:
         return null;
     }
@@ -840,6 +848,8 @@ export default function Dashboard() {
                   {renderModule("jogControls")}
                   {renderModule("jobControls")}
                   {renderModule("fileList")}
+                  {renderModule("smartPlug")}
+                  {renderModule("scheduledPrints")}
                 </div>
               )}
 
