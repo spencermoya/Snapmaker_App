@@ -11,7 +11,7 @@ import { getVapidPublicKey, isPushEnabled } from "./pushService";
 import { startStream, stopStream, getStreamInfo, getHlsDirectory, playlistExists } from "./streamService";
 import { fetchWithAuth } from "./digestAuth";
 import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } from "@shared/schema";
-import { merossLogin, merossToggle, merossGetStatus, merossLogout, isMerossConnected, autoConnectMeross, updateDeviceLocalIp, testDeviceConnection } from "./merossService";
+import { merossLogin, merossToggle, merossGetStatus, merossLogout, isMerossConnected, autoConnectMeross } from "./merossService";
 import { z } from "zod";
 
 const upload = multer({ 
@@ -2012,55 +2012,6 @@ export async function registerRoutes(
       res.json(plug);
     } catch (error) {
       res.status(500).json({ error: "Failed to get device status" });
-    }
-  });
-
-  app.put("/api/meross/devices/:id/ip", async (req, res) => {
-    try {
-      const plugId = parseInt(req.params.id);
-      const { localIp } = req.body;
-
-      const plug = await storage.getSmartPlug(plugId);
-      if (!plug) {
-        return res.status(404).json({ error: "Smart plug not found" });
-      }
-
-      const ipValue = localIp?.trim() || null;
-      if (ipValue && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ipValue)) {
-        return res.status(400).json({ error: "Invalid IP address format" });
-      }
-
-      const updated = await storage.updateSmartPlug(plugId, { localIp: ipValue });
-      updateDeviceLocalIp(plug.deviceId, ipValue);
-
-      res.json(updated);
-    } catch (error) {
-      res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to update device IP",
-      });
-    }
-  });
-
-  app.post("/api/meross/devices/:id/test", async (req, res) => {
-    try {
-      const plugId = parseInt(req.params.id);
-      const plug = await storage.getSmartPlug(plugId);
-      if (!plug) {
-        return res.status(404).json({ error: "Smart plug not found" });
-      }
-
-      const ip = plug.localIp;
-      if (!ip) {
-        return res.json({ success: false, message: "No IP address configured. Save an IP first." });
-      }
-
-      const result = await testDeviceConnection(plug.deviceId, ip);
-      res.json(result);
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        message: error instanceof Error ? error.message : "Test failed",
-      });
     }
   });
 

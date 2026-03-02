@@ -83,13 +83,13 @@ shared/           # Shared code between frontend/backend
   - Auto-discovers all Meross devices on the account
   - Toggle plugs on/off from dashboard widget or Settings page
   - Credentials stored in appSettings table, auto-reconnects on server restart
-  - Uses `server/merossService.ts` with direct HTTP API calls (no MQTT dependency)
+  - Uses `server/merossService.ts` with cloud REST API + MQTT for device control
   - Login and device listing via Meross cloud REST API (iotx.meross.com)
-  - Device control via local HTTP commands to device IP (http://<device_ip>/config)
-  - Meross cloud API does NOT provide device local IPs — user must manually enter each device's LAN IP in Settings
-  - IP stored in `local_ip` column; devices without an IP are discovered but cannot be toggled
+  - Device control via MQTT through Meross cloud broker (mqtts://<region>.meross.com:2001)
+  - No local IP configuration needed — all commands go through cloud MQTT
+  - MQTT client connects after cloud login, subscribes for device responses, publishes commands
   - Supports both Toggle and ToggleX device types automatically
-  - Smart plug data stored in `smart_plugs` database table (deviceId, model, channel, isOn, localIp)
+  - Smart plug data stored in `smart_plugs` database table (deviceId, model, channel, isOn)
 - **Scheduled prints**: Schedule G-code files to print at a future date/time
   - Schedule from file list (clock icon) or file preview dialog
   - Optional "power on smart plug" before printing (plug turns on 5 min early)

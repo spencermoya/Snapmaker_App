@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import mqtt from "mqtt";
 import { storage } from "./storage";
 
 const SECRET = "23x17ahWarFH6w29";
@@ -8,9 +9,12 @@ let httpDomain = DEFAULT_DOMAIN;
 let token = "";
 let key = "";
 let userId = "";
+let appId = "";
 let isConnected = false;
 let connectionError: string | null = null;
 let discoveredDevices: MerossDeviceInfo[] = [];
+let mqttClient: mqtt.MqttClient | null = null;
+const pendingMessages = new Map<string, { resolve: (data: any) => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>();
 
 interface MerossDeviceInfo {
   deviceId: string;
@@ -19,7 +23,6 @@ interface MerossDeviceInfo {
   deviceType: string;
   isOn: boolean;
   channels: number[];
-  localIp: string | null;
   usesToggleX: boolean;
 }
 
@@ -108,48 +111,167 @@ async function cloudRequest(endpoint: string, paramsData: any): Promise<any> {
   return result.data;
 }
 
-async function sendLocalCommand(deviceIp: string, method: string, namespace: string, payload: any): Promise<any> {
-  const messageId = crypto.createHash("md5").update(generateRandomString(16)).digest("hex");
-  const timestamp = Math.round(Date.now() / 1000);
-  const signature = crypto.createHash("md5").update(messageId + key + timestamp).digest("hex");
+function getMqttDomain(): string {
+  const region = httpDomain.replace(/\.meross\.com$/, "").replace("iot", "");
+  if (region && region !== "x") {
+    return `mqtt-${region}.meross.com`;
+  }
+  return "mqtt-us.meross.com";
+}
 
-  const data = {
-    header: {
-      from: "",
-      messageId,
-      method,
-      namespace,
-      payloadVersion: 1,
-      sign: signature,
-      timestamp,
-    },
-    payload,
-  };
+function disposeMqttClient(): void {
+  if (mqttClient) {
+    try {
+      mqttClient.removeAllListeners();
+      mqttClient.end(true);
+    } catch {}
+    mqttClient = null;
+  }
+}
 
-  let resp;
-  try {
-    resp = await fetch(`http://${deviceIp}/config`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-      signal: AbortSignal.timeout(10000),
-    });
-  } catch (err: any) {
-    const name = err?.name || "";
-    const msg = err instanceof Error ? err.message : String(err);
-    if (name === "TimeoutError" || name === "AbortError" || msg.includes("abort") || msg.includes("timeout")) {
-      throw new Error(`Device at ${deviceIp} did not respond (timed out after 10s). Check the IP address and ensure the device is powered on.`);
+function connectMqtt(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (mqttClient?.connected) {
+      resolve();
+      return;
     }
-    throw new Error(`Could not reach device at ${deviceIp}: ${msg}. Check the IP address and ensure the device is on the same network.`);
-  }
 
-  if (!resp.ok) {
-    let body = "";
-    try { body = await resp.text(); } catch {}
-    throw new Error(`Device at ${deviceIp} returned HTTP ${resp.status}${body ? `: ${body.substring(0, 200)}` : ""}`);
-  }
+    disposeMqttClient();
 
-  return resp.json();
+    appId = crypto.createHash("md5").update(`API${generateRandomString(16)}`).digest("hex");
+    const clientId = `app:${appId}`;
+    const hashedPassword = crypto.createHash("md5").update(userId + key).digest("hex");
+
+    const mqttDomain = getMqttDomain();
+    const brokerUrl = `mqtts://${mqttDomain}:2001`;
+    console.log(`[MerossService] Connecting MQTT to ${brokerUrl} as ${clientId}...`);
+
+    const client = mqtt.connect(brokerUrl, {
+      clientId,
+      username: userId,
+      password: hashedPassword,
+      rejectUnauthorized: true,
+      keepalive: 30,
+      reconnectPeriod: 5000,
+      connectTimeout: 15000,
+      protocolVersion: 4,
+    });
+
+    let settled = false;
+
+    const timeout = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        client.removeAllListeners();
+        client.end(true);
+        reject(new Error(`MQTT connection timed out to ${mqttDomain}`));
+      }
+    }, 15000);
+
+    client.on("connect", () => {
+      if (settled) return;
+      clearTimeout(timeout);
+
+      const userTopic = `/app/${userId}-${appId}/subscribe`;
+      client.subscribe(userTopic, (err) => {
+        if (settled) return;
+        settled = true;
+        if (err) {
+          console.log(`[MerossService] MQTT subscribe error: ${err.message}`);
+          client.removeAllListeners();
+          client.end(true);
+          reject(err);
+        } else {
+          mqttClient = client;
+          console.log(`[MerossService] MQTT connected and subscribed to ${userTopic}`);
+          resolve();
+        }
+      });
+    });
+
+    client.on("message", (_topic: string, message: Buffer) => {
+      try {
+        const data = JSON.parse(message.toString());
+        const messageId = data?.header?.messageId;
+        if (messageId && pendingMessages.has(messageId)) {
+          const pending = pendingMessages.get(messageId)!;
+          clearTimeout(pending.timer);
+          pendingMessages.delete(messageId);
+          pending.resolve(data);
+        }
+      } catch (err) {
+        console.log(`[MerossService] MQTT message parse error: ${err}`);
+      }
+    });
+
+    client.on("error", (err: Error) => {
+      console.log(`[MerossService] MQTT error: ${err.message}`);
+      if (!settled) {
+        settled = true;
+        clearTimeout(timeout);
+        client.removeAllListeners();
+        client.end(true);
+        reject(err);
+      }
+    });
+
+    client.on("close", () => {
+      console.log("[MerossService] MQTT connection closed");
+      if (mqttClient === client) {
+        mqttClient = null;
+      }
+    });
+
+    client.on("offline", () => {
+      console.log("[MerossService] MQTT offline");
+    });
+  });
+}
+
+function sendMqttCommand(deviceId: string, method: string, namespace: string, payload: any): Promise<any> {
+  return new Promise((resolve, reject) => {
+    if (!mqttClient || !mqttClient.connected) {
+      reject(new Error("MQTT not connected. Try reconnecting to Meross."));
+      return;
+    }
+
+    const messageId = crypto.createHash("md5").update(generateRandomString(16)).digest("hex");
+    const timestamp = Math.round(Date.now() / 1000);
+    const signature = crypto.createHash("md5").update(messageId + key + timestamp).digest("hex");
+
+    const data = {
+      header: {
+        from: `/app/${userId}-${appId}/subscribe`,
+        messageId,
+        method,
+        namespace,
+        payloadVersion: 1,
+        sign: signature,
+        timestamp,
+        triggerSrc: "iOSLocal",
+        uuid: deviceId,
+      },
+      payload,
+    };
+
+    const topic = `/appliance/${deviceId}/subscribe`;
+    const timeoutMs = 10000;
+
+    const timer = setTimeout(() => {
+      pendingMessages.delete(messageId);
+      reject(new Error(`Device did not respond within ${timeoutMs / 1000}s. It may be offline or unreachable.`));
+    }, timeoutMs);
+
+    pendingMessages.set(messageId, { resolve, reject, timer });
+
+    mqttClient.publish(topic, JSON.stringify(data), { qos: 1 }, (err) => {
+      if (err) {
+        clearTimeout(timer);
+        pendingMessages.delete(messageId);
+        reject(new Error(`Failed to send MQTT command: ${err.message}`));
+      }
+    });
+  });
 }
 
 export async function merossLogin(email: string, password: string): Promise<MerossDeviceInfo[]> {
@@ -194,19 +316,19 @@ export async function merossLogin(email: string, password: string): Promise<Mero
   token = loginResponse.token;
   key = loginResponse.key;
   userId = String(loginResponse.userid);
-  console.log(`[MerossService] Login successful (domain: ${httpDomain}), fetching device list...`);
+  console.log(`[MerossService] Login successful (domain: ${httpDomain}), connecting MQTT...`);
+
+  try {
+    await connectMqtt();
+  } catch (err) {
+    console.log(`[MerossService] MQTT connection failed: ${err instanceof Error ? err.message : err}, will retry on demand`);
+  }
 
   const deviceList = await cloudRequest("/v1/Device/devList", {});
   const devices: MerossDeviceInfo[] = [];
 
-  console.log(`[MerossService] Device list type: ${typeof deviceList}, isArray: ${Array.isArray(deviceList)}, length: ${Array.isArray(deviceList) ? deviceList.length : 'N/A'}`);
-  console.log(`[MerossService] Device list raw: ${JSON.stringify(deviceList)?.substring(0, 1000)}`);
-
   if (Array.isArray(deviceList)) {
     for (const dev of deviceList) {
-      const existingPlug = await storage.getSmartPlugByDeviceId(dev.uuid);
-      const deviceIp = existingPlug?.localIp || null;
-
       const device: MerossDeviceInfo = {
         deviceId: dev.uuid,
         name: dev.devName || dev.deviceName || "Unknown Device",
@@ -214,13 +336,12 @@ export async function merossLogin(email: string, password: string): Promise<Mero
         deviceType: dev.deviceType || dev.devType || "Unknown",
         isOn: false,
         channels: dev.channels ? dev.channels.map((_: any, i: number) => i) : [0],
-        localIp: deviceIp,
         usesToggleX: true,
       };
 
-      if (deviceIp) {
+      if (mqttClient?.connected) {
         try {
-          const allData = await sendLocalCommand(deviceIp, "GET", "Appliance.System.All", {});
+          const allData = await sendMqttCommand(dev.uuid, "GET", "Appliance.System.All", {});
           if (allData?.payload?.all?.digest?.togglex) {
             const togglex = allData.payload.all.digest.togglex;
             const ch0 = togglex.find((t: any) => t.channel === 0);
@@ -231,12 +352,12 @@ export async function merossLogin(email: string, password: string): Promise<Mero
             device.usesToggleX = false;
           }
         } catch (err) {
-          console.log(`[MerossService] Could not get local status for ${device.name}: ${err instanceof Error ? err.message : err}`);
+          console.log(`[MerossService] Could not get status for ${device.name}: ${err instanceof Error ? err.message : err}`);
         }
       }
 
       devices.push(device);
-      console.log(`[MerossService] Device discovered: ${device.name} (${device.deviceId}) IP: ${deviceIp || "not configured"}`);
+      console.log(`[MerossService] Device discovered: ${device.name} (${device.deviceId}) model: ${device.model}`);
     }
   }
 
@@ -253,24 +374,29 @@ export async function merossToggle(deviceId: string, channel: number, turnOn: bo
     throw new Error(`Device ${deviceId} not found`);
   }
 
-  if (!device.localIp) {
-    throw new Error(`No local IP configured for "${device.name}". Go to Settings and enter the device's IP address.`);
-  }
-
   if (!key) {
     throw new Error(`Meross cloud login required before controlling devices. Check your Meross credentials in Settings.`);
+  }
+
+  if (!mqttClient?.connected) {
+    console.log("[MerossService] MQTT not connected, reconnecting...");
+    try {
+      await connectMqtt();
+    } catch (err) {
+      throw new Error(`Cannot connect to Meross cloud MQTT: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   try {
     if (device.usesToggleX) {
       const payload = { togglex: { channel, onoff: turnOn ? 1 : 0 } };
-      await sendLocalCommand(device.localIp, "SET", "Appliance.Control.ToggleX", payload);
+      await sendMqttCommand(deviceId, "SET", "Appliance.Control.ToggleX", payload);
     } else {
       const payload = { toggle: { onoff: turnOn ? 1 : 0 } };
-      await sendLocalCommand(device.localIp, "SET", "Appliance.Control.Toggle", payload);
+      await sendMqttCommand(deviceId, "SET", "Appliance.Control.Toggle", payload);
     }
     device.isOn = turnOn;
-    console.log(`[MerossService] Toggled ${device.name} channel ${channel} to ${turnOn ? "ON" : "OFF"} (local)`);
+    console.log(`[MerossService] Toggled ${device.name} channel ${channel} to ${turnOn ? "ON" : "OFF"}`);
     return true;
   } catch (err) {
     const errMsg = `Toggle failed for ${device.name}: ${err instanceof Error ? err.message : err}`;
@@ -286,9 +412,9 @@ export async function merossGetStatus(deviceId: string): Promise<{ isOn: boolean
     throw new Error(`Device ${deviceId} not found`);
   }
 
-  if (device.localIp) {
+  if (mqttClient?.connected) {
     try {
-      const allData = await sendLocalCommand(device.localIp, "GET", "Appliance.System.All", {});
+      const allData = await sendMqttCommand(deviceId, "GET", "Appliance.System.All", {});
       if (allData?.payload?.all?.digest?.togglex) {
         const togglex = allData.payload.all.digest.togglex;
         const ch0 = togglex.find((t: any) => t.channel === 0);
@@ -306,6 +432,14 @@ export async function merossGetStatus(deviceId: string): Promise<{ isOn: boolean
 }
 
 export async function merossLogout(): Promise<void> {
+  disposeMqttClient();
+
+  for (const [, pending] of pendingMessages) {
+    clearTimeout(pending.timer);
+    pending.reject(new Error("Logging out"));
+  }
+  pendingMessages.clear();
+
   if (token) {
     try {
       await cloudRequest("/v1/Profile/logout", {});
@@ -316,6 +450,7 @@ export async function merossLogout(): Promise<void> {
   token = "";
   key = "";
   userId = "";
+  appId = "";
   discoveredDevices = [];
   isConnected = false;
   connectionError = null;
@@ -331,28 +466,6 @@ export function getMerossError(): string | null {
 
 export function getConnectedDeviceIds(): string[] {
   return discoveredDevices.map(d => d.deviceId);
-}
-
-export async function testDeviceConnection(deviceId: string, localIp: string): Promise<{ success: boolean; message: string }> {
-  if (!key) {
-    return { success: false, message: "Meross cloud login required first. Check your credentials in Settings." };
-  }
-  try {
-    const allData = await sendLocalCommand(localIp, "GET", "Appliance.System.All", {});
-    const name = allData?.payload?.all?.system?.hardware?.type || "Unknown device";
-    const firmware = allData?.payload?.all?.system?.firmware?.version || "unknown";
-    return { success: true, message: `Connected to ${name} (firmware ${firmware})` };
-  } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : "Connection test failed" };
-  }
-}
-
-export function updateDeviceLocalIp(deviceId: string, localIp: string | null): void {
-  const device = discoveredDevices.find(d => d.deviceId === deviceId);
-  if (device) {
-    device.localIp = localIp;
-    console.log(`[MerossService] Updated local IP for ${device.name}: ${localIp || "cleared"}`);
-  }
 }
 
 export async function autoConnectMeross(): Promise<void> {

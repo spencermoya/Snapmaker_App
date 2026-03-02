@@ -57,10 +57,6 @@ export default function Settings() {
   const [merossEmail, setMerossEmail] = useState("");
   const [merossPassword, setMerossPassword] = useState("");
   const [merossConnecting, setMerossConnecting] = useState(false);
-  const [deviceIps, setDeviceIps] = useState<Record<number, string>>({});
-  const [savingIp, setSavingIp] = useState<number | null>(null);
-  const [testingDevice, setTestingDevice] = useState<number | null>(null);
-  const [testResults, setTestResults] = useState<Record<number, { success: boolean; message: string }>>({});
 
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [pushSupported, setPushSupported] = useState(false);
@@ -557,42 +553,6 @@ export default function Settings() {
       refetchMeross();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to toggle plug");
-    }
-  };
-
-  const handleSaveDeviceIp = async (plugId: number) => {
-    const plug = merossStatus?.devices?.find(d => d.id === plugId);
-    const ip = deviceIps[plugId] ?? plug?.localIp ?? "";
-    setSavingIp(plugId);
-    try {
-      await apiRequest("PUT", `/api/meross/devices/${plugId}/ip`, { localIp: ip });
-      toast.success(ip ? `IP address saved: ${ip}` : "IP address cleared");
-      refetchMeross();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save IP");
-    } finally {
-      setSavingIp(null);
-    }
-  };
-
-  const handleTestDevice = async (plugId: number) => {
-    setTestingDevice(plugId);
-    setTestResults(prev => ({ ...prev, [plugId]: undefined as any }));
-    try {
-      const res = await apiRequest("POST", `/api/meross/devices/${plugId}/test`);
-      const result = await res.json();
-      setTestResults(prev => ({ ...prev, [plugId]: result }));
-      if (result.success) {
-        toast.success(result.message);
-      } else {
-        toast.error(result.message);
-      }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : "Test failed";
-      setTestResults(prev => ({ ...prev, [plugId]: { success: false, message: msg } }));
-      toast.error(msg);
-    } finally {
-      setTestingDevice(null);
     }
   };
 
@@ -1476,82 +1436,30 @@ export default function Settings() {
               </div>
 
               {merossStatus.devices && merossStatus.devices.length > 0 ? (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Discovered Devices</p>
                   {merossStatus.devices.map((plug) => (
                     <div
                       key={plug.id}
-                      className="p-3 bg-secondary/30 rounded-lg space-y-2"
+                      className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg"
                       data-testid={`card-settings-plug-${plug.id}`}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className={`p-1.5 rounded-full ${plug.isOn ? "bg-green-500/20 text-green-400" : "bg-secondary/40 text-muted-foreground"}`}>
-                            <Power className="h-3.5 w-3.5" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium">{plug.name}</p>
-                            <p className="text-xs text-muted-foreground">{plug.model || "Smart Plug"}</p>
-                          </div>
+                      <div className="flex items-center gap-3">
+                        <div className={`p-1.5 rounded-full ${plug.isOn ? "bg-green-500/20 text-green-400" : "bg-secondary/40 text-muted-foreground"}`}>
+                          <Power className="h-3.5 w-3.5" />
                         </div>
-                        <Switch
-                          checked={plug.isOn ?? false}
-                          onCheckedChange={(checked) => handleMerossToggle(plug.id, checked)}
-                          disabled={!plug.localIp}
-                          data-testid={`switch-settings-plug-${plug.id}`}
-                        />
+                        <div>
+                          <p className="text-sm font-medium">{plug.name}</p>
+                          <p className="text-xs text-muted-foreground">{plug.model || "Smart Plug"}</p>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          placeholder="Device IP (e.g. 192.168.1.50)"
-                          value={deviceIps[plug.id] ?? plug.localIp ?? ""}
-                          onChange={(e) => setDeviceIps(prev => ({ ...prev, [plug.id]: e.target.value }))}
-                          className="h-8 text-xs"
-                          data-testid={`input-plug-ip-${plug.id}`}
-                        />
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 text-xs shrink-0"
-                          onClick={() => handleSaveDeviceIp(plug.id)}
-                          disabled={savingIp === plug.id}
-                          data-testid={`button-save-ip-${plug.id}`}
-                        >
-                          {savingIp === plug.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            "Save IP"
-                          )}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 text-xs shrink-0"
-                          onClick={() => handleTestDevice(plug.id)}
-                          disabled={testingDevice === plug.id || !plug.localIp}
-                          data-testid={`button-test-plug-${plug.id}`}
-                        >
-                          {testingDevice === plug.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            "Test"
-                          )}
-                        </Button>
-                      </div>
-                      {!plug.localIp && (
-                        <p className="text-xs text-amber-400">Enter the device's local IP address to enable control.</p>
-                      )}
-                      {testResults[plug.id] && (
-                        <p className={`text-xs ${testResults[plug.id].success ? "text-green-400" : "text-red-400"}`}
-                          data-testid={`text-test-result-${plug.id}`}>
-                          {testResults[plug.id].message}
-                        </p>
-                      )}
+                      <Switch
+                        checked={plug.isOn ?? false}
+                        onCheckedChange={(checked) => handleMerossToggle(plug.id, checked)}
+                        data-testid={`switch-settings-plug-${plug.id}`}
+                      />
                     </div>
                   ))}
-                  <p className="text-xs text-muted-foreground">
-                    Find device IPs in your router's admin page or the Meross app under device settings.
-                  </p>
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">No smart plug devices found on your Meross account.</p>
