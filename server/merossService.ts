@@ -112,11 +112,7 @@ async function cloudRequest(endpoint: string, paramsData: any): Promise<any> {
 }
 
 function getMqttDomain(): string {
-  const region = httpDomain.replace(/\.meross\.com$/, "").replace("iot", "");
-  if (region && region !== "x") {
-    return `mqtt-${region}.meross.com`;
-  }
-  return "mqtt-us.meross.com";
+  return httpDomain || "iotx-us.meross.com";
 }
 
 function disposeMqttClient(): void {
@@ -189,15 +185,20 @@ function connectMqtt(): Promise<void> {
       });
     });
 
-    client.on("message", (_topic: string, message: Buffer) => {
+    client.on("message", (topic: string, message: Buffer) => {
       try {
         const data = JSON.parse(message.toString());
         const messageId = data?.header?.messageId;
+        const namespace = data?.header?.namespace;
+        const method = data?.header?.method;
+        console.log(`[MerossService] MQTT received on ${topic}: messageId=${messageId}, namespace=${namespace}, method=${method}`);
         if (messageId && pendingMessages.has(messageId)) {
           const pending = pendingMessages.get(messageId)!;
           clearTimeout(pending.timer);
           pendingMessages.delete(messageId);
           pending.resolve(data);
+        } else {
+          console.log(`[MerossService] MQTT message not matched to pending request (messageId=${messageId})`);
         }
       } catch (err) {
         console.log(`[MerossService] MQTT message parse error: ${err}`);
@@ -257,8 +258,11 @@ function sendMqttCommand(deviceId: string, method: string, namespace: string, pa
     const topic = `/appliance/${deviceId}/subscribe`;
     const timeoutMs = 10000;
 
+    console.log(`[MerossService] MQTT publishing to ${topic}: messageId=${messageId}, namespace=${namespace}, method=${method}`);
+
     const timer = setTimeout(() => {
       pendingMessages.delete(messageId);
+      console.log(`[MerossService] MQTT timeout waiting for response: messageId=${messageId}`);
       reject(new Error(`Device did not respond within ${timeoutMs / 1000}s. It may be offline or unreachable.`));
     }, timeoutMs);
 
