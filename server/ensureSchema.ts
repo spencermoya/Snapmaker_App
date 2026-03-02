@@ -150,6 +150,11 @@ const REQUIRED_COLUMNS = [
   },
   {
     table: "smart_plugs",
+    column: "device_id",
+    addSQL: "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS device_id TEXT UNIQUE",
+  },
+  {
+    table: "smart_plugs",
     column: "model",
     addSQL: "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS model TEXT",
   },
@@ -185,6 +190,36 @@ const COLUMNS_TO_DROP = [
     table: "push_subscriptions",
     column: "printer_id",
     dropSQL: "ALTER TABLE push_subscriptions DROP COLUMN IF EXISTS printer_id",
+  },
+  {
+    table: "smart_plugs",
+    column: "type",
+    dropSQL: "ALTER TABLE smart_plugs DROP COLUMN IF EXISTS type",
+  },
+  {
+    table: "smart_plugs",
+    column: "node_id",
+    dropSQL: "ALTER TABLE smart_plugs DROP COLUMN IF EXISTS node_id",
+  },
+  {
+    table: "smart_plugs",
+    column: "vendor_id",
+    dropSQL: "ALTER TABLE smart_plugs DROP COLUMN IF EXISTS vendor_id",
+  },
+  {
+    table: "smart_plugs",
+    column: "pairing_code",
+    dropSQL: "ALTER TABLE smart_plugs DROP COLUMN IF EXISTS pairing_code",
+  },
+  {
+    table: "smart_plugs",
+    column: "ip_address",
+    dropSQL: "ALTER TABLE smart_plugs DROP COLUMN IF EXISTS ip_address",
+  },
+  {
+    table: "smart_plugs",
+    column: "paired",
+    dropSQL: "ALTER TABLE smart_plugs DROP COLUMN IF EXISTS paired",
   },
 ];
 
@@ -246,29 +281,6 @@ export async function ensureSchema(): Promise<void> {
       }
     }
     
-    for (const col of REQUIRED_COLUMNS) {
-      try {
-        const result = await client.query(`
-          SELECT EXISTS (
-            SELECT FROM information_schema.columns 
-            WHERE table_schema = 'public' 
-            AND table_name = $1
-            AND column_name = $2
-          )
-        `, [col.table, col.column]);
-        
-        const exists = result.rows[0]?.exists;
-        
-        if (!exists) {
-          log(`[Schema] Adding missing column: ${col.table}.${col.column}`, "db");
-          await client.query(col.addSQL);
-          log(`[Schema] Added column: ${col.table}.${col.column}`, "db");
-        }
-      } catch (error) {
-        log(`[Schema] Warning adding column ${col.table}.${col.column}: ${error}`, "db");
-      }
-    }
-    
     for (const col of COLUMNS_TO_DROP) {
       try {
         const result = await client.query(`
@@ -292,6 +304,29 @@ export async function ensureSchema(): Promise<void> {
       }
     }
     
+    for (const col of REQUIRED_COLUMNS) {
+      try {
+        const result = await client.query(`
+          SELECT EXISTS (
+            SELECT FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = $1
+            AND column_name = $2
+          )
+        `, [col.table, col.column]);
+        
+        const exists = result.rows[0]?.exists;
+        
+        if (!exists) {
+          log(`[Schema] Adding missing column: ${col.table}.${col.column}`, "db");
+          await client.query(col.addSQL);
+          log(`[Schema] Added column: ${col.table}.${col.column}`, "db");
+        }
+      } catch (error) {
+        log(`[Schema] Warning adding column ${col.table}.${col.column}: ${error}`, "db");
+      }
+    }
+
     log("[Schema] All required tables verified", "db");
   } catch (error) {
     log(`[Schema] Error ensuring schema: ${error}`, "db");
