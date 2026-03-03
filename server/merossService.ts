@@ -525,6 +525,9 @@ export async function autoConnectMeross(): Promise<void> {
         const existing = await storage.getSmartPlugByDeviceId(dev.deviceId);
         if (existing) {
           await storage.updateSmartPlug(existing.id, {
+            name: dev.name,
+            model: dev.model,
+            deviceType: dev.deviceType,
             isOn: dev.isOn,
             lastSeen: new Date(),
           });
