@@ -92,10 +92,12 @@ shared/           # Shared code between frontend/backend
   - Smart plug data stored in `smart_plugs` database table (deviceId, model, channel, isOn)
 - **Scheduled prints**: Schedule G-code files to print at a future date/time
   - Schedule from file list (clock icon) or file preview dialog
-  - Optional "power on smart plug" before printing (plug turns on 5 min early)
-  - Multi-phase execution: warming_up (5min before) → connecting (1min before) → running (at scheduled time)
+  - Optional "power on smart plug" before printing
+  - Multi-phase execution: pending → warming_up (plug on + 2min boot wait) → connecting (find & connect printer) → running (upload + start)
   - Background service checks for due prints every poll cycle, advancing through phases as time approaches
-  - Execution flow: power on plug (5min before) → connect to printer (1min before) → upload file → M23/M24 → start print (at scheduled time)
+  - Execution flow: power on plug (up to 5min before) → wait 2 minutes for printer boot → connect to printer → upload file → M23/M24 → start print
+  - Printer boot wait tracked via `warmingStartedAt` timestamp in database
+  - If printer not reachable after connecting, retries for up to 5 minutes past scheduled time before failing
   - Push notifications sent when scheduled prints start or fail
   - Scheduled print data stored in `scheduled_prints` database table
   - Dashboard widget shows pending/running/completed/failed prints with status

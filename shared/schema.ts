@@ -88,6 +88,7 @@ export const scheduledPrints = pgTable("scheduled_prints", {
   plugId: integer("plug_id"),
   createdAt: timestamp("created_at").defaultNow(),
   executedAt: timestamp("executed_at"),
+  warmingStartedAt: timestamp("warming_started_at"),
   errorMessage: text("error_message"),
 });
 

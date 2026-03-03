@@ -188,6 +188,11 @@ const REQUIRED_COLUMNS = [
     column: "local_ip",
     addSQL: "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS local_ip TEXT",
   },
+  {
+    table: "scheduled_prints",
+    column: "warming_started_at",
+    addSQL: "ALTER TABLE scheduled_prints ADD COLUMN IF NOT EXISTS warming_started_at TIMESTAMP",
+  },
 ];
 
 const COLUMNS_TO_DROP = [

@@ -338,121 +338,127 @@ async function pollPrinter(printer: Printer): Promise<void> {
   }
 }
 
+async function powerOnSmartPlug(scheduledId: number, plugId: number): Promise<boolean> {
+  const plug = await storage.getSmartPlug(plugId);
+  if (!plug) {
+    console.log(`[BackgroundService] Smart plug #${plugId} not found for print #${scheduledId}`);
+    return false;
+  }
+
+  if (!isMerossConnected()) {
+    const email = await storage.getSetting("meross_email");
+    const password = await storage.getSetting("meross_password");
+    if (email && password) {
+      await merossLogin(email, password);
+    }
+  }
+
+  if (!isMerossConnected()) {
+    console.log(`[BackgroundService] Meross not connected, cannot power on plug for print #${scheduledId}`);
+    return false;
+  }
+
+  await merossToggle(plug.deviceId, plug.channel ?? 0, true);
+  await storage.updateSmartPlug(plug.id, { isOn: true, lastSeen: new Date() });
+  console.log(`[BackgroundService] Smart plug powered on for scheduled print #${scheduledId}`);
+  return true;
+}
+
+const BOOT_WAIT_MS = 2 * 60 * 1000;
+const MAX_RETRY_MINUTES_PAST_SCHEDULE = 5;
+
 async function handleScheduledPrintPhase(print: any): Promise<void> {
   const { id: scheduledId, printerId, fileId, filename, plugId, powerOnPlug, status } = print;
   const scheduledTime = new Date(print.scheduledAt).getTime();
+  const warmingStartedAt = print.warmingStartedAt ? new Date(print.warmingStartedAt).getTime() : null;
   const now = Date.now();
   const minutesBefore = (scheduledTime - now) / 60000;
+  const minutesPastSchedule = -minutesBefore;
 
   try {
-    if (status === "pending" && powerOnPlug && plugId && minutesBefore <= 5 && minutesBefore > 1) {
-      console.log(`[BackgroundService] Scheduled print #${scheduledId}: Powering on smart plug (${Math.round(minutesBefore)}min before print)`);
-      await storage.updateScheduledPrint(scheduledId, { status: "warming_up" });
 
-      const plug = await storage.getSmartPlug(plugId);
-      if (plug) {
-        if (!isMerossConnected()) {
-          const email = await storage.getSetting("meross_email");
-          const password = await storage.getSetting("meross_password");
-          if (email && password) {
-            await merossLogin(email, password);
+    if (status === "pending") {
+      if (powerOnPlug && plugId) {
+        if (minutesBefore <= 5) {
+          console.log(`[BackgroundService] Scheduled print #${scheduledId}: Powering on smart plug first`);
+          const powered = await powerOnSmartPlug(scheduledId, plugId);
+          if (!powered) {
+            throw new Error("Failed to power on smart plug");
           }
+          await storage.updateScheduledPrint(scheduledId, { 
+            status: "warming_up",
+            warmingStartedAt: new Date(),
+          });
+          console.log(`[BackgroundService] Scheduled print #${scheduledId}: Waiting 2 minutes for printer to boot...`);
+          return;
         }
+        return;
+      }
 
-        if (isMerossConnected()) {
-          await merossToggle(plug.deviceId, plug.channel ?? 0, true);
-          await storage.updateSmartPlug(plug.id, { isOn: true, lastSeen: new Date() });
-          console.log(`[BackgroundService] Smart plug powered on for scheduled print #${scheduledId}`);
-        } else {
-          console.log(`[BackgroundService] Meross not connected, skipping plug power-on`);
-        }
+      if (minutesBefore <= 1) {
+        console.log(`[BackgroundService] Scheduled print #${scheduledId}: No plug needed, moving to connect phase`);
+        await storage.updateScheduledPrint(scheduledId, { status: "connecting" });
+        return;
       }
       return;
     }
 
-    if ((status === "pending" && !powerOnPlug && minutesBefore <= 1) ||
-        (status === "pending" && powerOnPlug && minutesBefore <= 1) ||
-        (status === "warming_up" && minutesBefore <= 1)) {
-      console.log(`[BackgroundService] Scheduled print #${scheduledId}: Connecting to printer (${Math.round(minutesBefore * 60)}s before print)`);
+    if (status === "warming_up") {
+      if (!warmingStartedAt) {
+        await storage.updateScheduledPrint(scheduledId, { warmingStartedAt: new Date() });
+        return;
+      }
+
+      const elapsedSincePlugOn = now - warmingStartedAt;
+      const remainingWait = BOOT_WAIT_MS - elapsedSincePlugOn;
+
+      if (remainingWait > 0) {
+        console.log(`[BackgroundService] Scheduled print #${scheduledId}: Waiting for printer boot (${Math.round(remainingWait / 1000)}s remaining)`);
+        return;
+      }
+
+      console.log(`[BackgroundService] Scheduled print #${scheduledId}: Boot wait complete, moving to connect phase`);
       await storage.updateScheduledPrint(scheduledId, { status: "connecting" });
+      return;
+    }
 
+    if (status === "connecting") {
       const printer = await storage.getPrinter(printerId);
       if (!printer) {
         throw new Error("Printer not found");
       }
 
-      const isOnline = await checkPrinterOnline(printer.ipAddress);
-      if (!isOnline) {
-        console.log(`[BackgroundService] Printer not reachable yet for print #${scheduledId}, will retry`);
-        return;
-      }
-
-      if (!printer.isConnected || !printer.token) {
-        if (printer.token) {
-          const reconnected = await attemptReconnect(printer);
-          if (!reconnected) {
-            console.log(`[BackgroundService] Reconnection failed for print #${scheduledId}, will retry`);
-            return;
-          }
-        } else {
-          throw new Error("Printer has no saved token - manual connection required first");
-        }
-      }
-      console.log(`[BackgroundService] Printer connected for scheduled print #${scheduledId}`);
-      return;
-    }
-
-    if (status === "connecting" && minutesBefore > 0) {
-      const printer = await storage.getPrinter(printerId);
-      if (!printer) {
-        throw new Error("Printer not found");
+      if (!printer.token) {
+        throw new Error("Printer has no saved token - manual connection required first");
       }
 
       const isOnline = await checkPrinterOnline(printer.ipAddress);
       if (!isOnline) {
-        console.log(`[BackgroundService] Printer not reachable yet for print #${scheduledId}, will retry next cycle`);
+        if (minutesPastSchedule > MAX_RETRY_MINUTES_PAST_SCHEDULE) {
+          throw new Error(`Printer not reachable after ${MAX_RETRY_MINUTES_PAST_SCHEDULE} minutes past scheduled time`);
+        }
+        console.log(`[BackgroundService] Scheduled print #${scheduledId}: Printer not reachable yet, will retry next cycle`);
         return;
       }
 
-      if (!printer.isConnected || !printer.token) {
-        if (printer.token) {
-          const reconnected = await attemptReconnect(printer);
-          if (!reconnected) {
-            console.log(`[BackgroundService] Reconnection failed for print #${scheduledId}, will retry next cycle`);
-            return;
+      if (!printer.isConnected) {
+        const reconnected = await attemptReconnect(printer);
+        if (!reconnected) {
+          if (minutesPastSchedule > MAX_RETRY_MINUTES_PAST_SCHEDULE) {
+            throw new Error(`Could not connect to printer after ${MAX_RETRY_MINUTES_PAST_SCHEDULE} minutes past scheduled time`);
           }
-          console.log(`[BackgroundService] Printer connected for scheduled print #${scheduledId}, waiting for scheduled time`);
-        } else {
-          throw new Error("Printer has no saved token - manual connection required first");
+          console.log(`[BackgroundService] Scheduled print #${scheduledId}: Reconnection failed, will retry next cycle`);
+          return;
         }
       }
-      return;
-    }
 
-    if (status === "connecting" && minutesBefore <= 0) {
-      console.log(`[BackgroundService] Scheduled print #${scheduledId}: Starting print now`);
+      if (minutesBefore > 0) {
+        console.log(`[BackgroundService] Scheduled print #${scheduledId}: Printer connected, waiting for scheduled time (${Math.round(minutesBefore * 60)}s remaining)`);
+        return;
+      }
+
+      console.log(`[BackgroundService] Scheduled print #${scheduledId}: Printer connected, starting print`);
       await storage.updateScheduledPrint(scheduledId, { status: "running", executedAt: new Date() });
-
-      const printer = await storage.getPrinter(printerId);
-      if (!printer) {
-        throw new Error("Printer not found");
-      }
-
-      const isOnline = await checkPrinterOnline(printer.ipAddress);
-      if (!isOnline) {
-        throw new Error("Printer is not reachable on the network");
-      }
-
-      if (!printer.isConnected || !printer.token) {
-        if (printer.token) {
-          const reconnected = await attemptReconnect(printer);
-          if (!reconnected) {
-            throw new Error("Could not connect to printer - reconnection failed");
-          }
-        } else {
-          throw new Error("Printer has no saved token - manual connection required first");
-        }
-      }
 
       const currentPrinter = await storage.getPrinter(printerId);
       if (!currentPrinter?.token) {
@@ -532,27 +538,6 @@ async function handleScheduledPrintPhase(print: any): Promise<void> {
           data: { type: "scheduled_print_started", filename },
         }).catch(err => console.log("[BackgroundService] Push notification error:", err));
       }
-      return;
-    }
-
-    if (status === "pending" && minutesBefore <= 0) {
-      console.log(`[BackgroundService] Scheduled print #${scheduledId}: Time has passed, fast-tracking to connect phase`);
-      if (powerOnPlug && plugId) {
-        await storage.updateScheduledPrint(scheduledId, { status: "warming_up" });
-        const plug = await storage.getSmartPlug(plugId);
-        if (plug) {
-          if (!isMerossConnected()) {
-            const email = await storage.getSetting("meross_email");
-            const password = await storage.getSetting("meross_password");
-            if (email && password) await merossLogin(email, password);
-          }
-          if (isMerossConnected()) {
-            await merossToggle(plug.deviceId, plug.channel ?? 0, true);
-            await storage.updateSmartPlug(plug.id, { isOn: true, lastSeen: new Date() });
-          }
-        }
-      }
-      await storage.updateScheduledPrint(scheduledId, { status: "connecting" });
       return;
     }
 
