@@ -93,6 +93,17 @@ export async function sendPushNotification(payload: NotificationPayload): Promis
   return { success, failed };
 }
 
+export async function notifyPrintStarted(filename: string): Promise<void> {
+  await sendPushNotification({
+    title: "Print Started",
+    body: `${filename} is now printing`,
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: "print-started",
+    data: { type: "print-started", filename },
+  });
+}
+
 export async function notifyPrintComplete(filename: string): Promise<void> {
   await sendPushNotification({
     title: "Print Complete!",

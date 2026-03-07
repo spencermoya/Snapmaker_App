@@ -1,6 +1,6 @@
 import { storage } from "./storage";
 import type { Printer, PrinterStatus } from "@shared/schema";
-import { notifyPrintComplete, notifyPrinterDisconnected, notifyPrinterOnline, isPushEnabled } from "./pushService";
+import { notifyPrintStarted, notifyPrintComplete, notifyPrinterDisconnected, notifyPrinterOnline, isPushEnabled } from "./pushService";
 import { merossToggle, isMerossConnected, merossLogin } from "./merossService";
 
 const SNAPMAKER_PORT = 8080;
@@ -16,6 +16,8 @@ interface PrinterState {
   wasOnline: boolean;
   lastReconnectAttempt: number;
   consecutiveFailures: number;
+  notifiedPrintStarted: boolean;
+  notifiedPrintFinished: boolean;
 }
 
 const printerStates = new Map<number, PrinterState>();
@@ -151,6 +153,8 @@ function getOrCreateState(printerId: number): PrinterState {
       wasOnline: false,
       lastReconnectAttempt: 0,
       consecutiveFailures: 0,
+      notifiedPrintStarted: false,
+      notifiedPrintFinished: false,
     };
     printerStates.set(printerId, state);
   }
@@ -195,9 +199,11 @@ async function handlePrintStateChange(
   const state = getOrCreateState(printerId);
   
   if (oldState !== "running" && newState === "running") {
-    console.log(`[BackgroundService] Print started for printer ${printerId}`);
+    console.log(`[BackgroundService] Print job started for printer ${printerId} (preheating)`);
     state.printStartTime = Date.now();
     state.currentFilename = status.currentFile;
+    state.notifiedPrintStarted = false;
+    state.notifiedPrintFinished = false;
   }
   
   if (oldState === "running" && (newState === "idle" || newState === "finished")) {
@@ -235,7 +241,7 @@ async function handlePrintStateChange(
           lastPrintCompletedAt: new Date(),
         });
         
-        if (isPushEnabled()) {
+        if (isPushEnabled() && !state.notifiedPrintFinished) {
           notifyPrintComplete(state.currentFilename).catch(err => 
             console.log(`[BackgroundService] Failed to send print complete notification:`, err)
           );
@@ -247,6 +253,8 @@ async function handlePrintStateChange(
     
     state.printStartTime = null;
     state.currentFilename = null;
+    state.notifiedPrintStarted = false;
+    state.notifiedPrintFinished = false;
   }
   
   state.lastPrintState = newState;
@@ -335,6 +343,27 @@ async function pollPrinter(printer: Printer): Promise<void> {
   
   if (status.state !== state.lastPrintState) {
     await handlePrintStateChange(currentPrinter.id, state.lastPrintState, status.state, status);
+  }
+
+  if (status.state === "running" && isPushEnabled()) {
+    const progress = status.progress ?? 0;
+    const filename = state.currentFilename || status.currentFile || "Unknown file";
+
+    if (progress > 0 && !state.notifiedPrintStarted) {
+      state.notifiedPrintStarted = true;
+      console.log(`[BackgroundService] Print actually started (progress: ${progress}%) for ${filename}`);
+      notifyPrintStarted(filename).catch(err =>
+        console.log(`[BackgroundService] Failed to send print started notification:`, err)
+      );
+    }
+
+    if (progress >= 100 && !state.notifiedPrintFinished) {
+      state.notifiedPrintFinished = true;
+      console.log(`[BackgroundService] Print finished (progress: 100%) for ${filename}`);
+      notifyPrintComplete(filename).catch(err =>
+        console.log(`[BackgroundService] Failed to send print complete notification:`, err)
+      );
+    }
   }
 }
 
