@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Plus, Trash2, Wifi, WifiOff, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Bell, Camera, Loader2, ChevronDown, ChevronUp, Plug, Power } from "lucide-react";
+import { Plus, Trash2, Wifi, WifiOff, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Bell, Camera, Loader2, ChevronDown, ChevronUp, Plug, Power, Cloud, RefreshCw } from "lucide-react";
 import type { Printer, SmartPlug } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -34,6 +34,8 @@ export default function Settings() {
   const [merossEmail, setMerossEmail] = useState("");
   const [merossPassword, setMerossPassword] = useState("");
   const [merossConnecting, setMerossConnecting] = useState(false);
+  const [dropboxFolderPath, setDropboxFolderPath] = useState("");
+  const [dropboxSyncing, setDropboxSyncing] = useState(false);
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [pushSupported, setPushSupported] = useState(false);
   const [pushPermission, setPushPermission] = useState<NotificationPermission>("default");
@@ -70,6 +72,7 @@ export default function Settings() {
   const { data: printers = [], isLoading } = useQuery<Printer[]>({ queryKey: ["/api/printers"] });
   const { data: settings } = useQuery<SettingsData>({ queryKey: ["/api/settings"] });
   const { data: merossStatus, refetch: refetchMeross } = useQuery<{ connected: boolean; email: string | null; devices: SmartPlug[] }>({ queryKey: ["/api/meross/status"], refetchInterval: 15000 });
+  const { data: dropboxStatus, refetch: refetchDropbox } = useQuery<{ connected: boolean; folderPath: string | null; syncEnabled: boolean; syncing: boolean; account: { email: string; name: string } | null }>({ queryKey: ["/api/dropbox/status"], refetchInterval: 30000 });
 
   useEffect(() => {
     if (cameraSettings) {
@@ -235,6 +238,41 @@ export default function Settings() {
 
   const handleMerossToggle = async (plugId: number, turnOn: boolean) => {
     try { await apiRequest("POST", `/api/meross/devices/${plugId}/toggle`, { turnOn }); refetchMeross(); } catch (error) { toast.error(error instanceof Error ? error.message : "Failed to toggle plug"); }
+  };
+
+  const handleDropboxSetFolder = async () => {
+    const path = dropboxFolderPath.trim();
+    if (!path) { toast.error("Enter a Dropbox folder path"); return; }
+    try {
+      await apiRequest("PUT", "/api/dropbox/folder", { folderPath: path });
+      toast.success("Dropbox folder set! Auto-sync enabled.");
+      setDropboxFolderPath("");
+      refetchDropbox();
+      queryClient.invalidateQueries({ queryKey: ["/api/printers"] });
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Failed to set folder"); }
+  };
+
+  const handleDropboxSync = async () => {
+    setDropboxSyncing(true);
+    try {
+      const res = await apiRequest("POST", "/api/dropbox/sync");
+      const data = await res.json();
+      if (data.error) { toast.error(data.error); }
+      else if (data.synced > 0) { toast.success(`Synced ${data.synced} file(s): ${data.files.join(", ")}`); if (data.errors?.length) toast.error(`${data.errors.length} file(s) had errors`); }
+      else if (data.skipped > 0) { toast.info("All files already synced"); }
+      else { toast.info("No G-code files found in folder"); }
+      refetchDropbox();
+      queryClient.invalidateQueries({ queryKey: ["/api/printers"] });
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Sync failed"); }
+    finally { setDropboxSyncing(false); }
+  };
+
+  const handleDropboxDisconnect = async () => {
+    try {
+      await apiRequest("DELETE", "/api/dropbox/disconnect");
+      toast.success("Dropbox sync disabled");
+      refetchDropbox();
+    } catch { toast.error("Failed to disconnect"); }
   };
 
   const addPrinterMutation = useMutation({
@@ -494,6 +532,42 @@ export default function Settings() {
                 <Input type="password" placeholder="Meross password" value={merossPassword} onChange={(e) => setMerossPassword(e.target.value)} data-testid="input-meross-password" />
                 <Button onClick={handleMerossLogin} disabled={merossConnecting || !merossEmail || !merossPassword} className="w-full" size="sm" data-testid="button-meross-connect">
                   {merossConnecting ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />Connecting...</>) : (<><Plug className="h-4 w-4 mr-2" />Connect</>)}
+                </Button>
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-4 bg-secondary/20 border-border space-y-3">
+            <div className="flex items-center gap-2">
+              <Cloud className="h-4 w-4 text-primary" />
+              <h2 className="text-sm font-semibold">Dropbox Sync</h2>
+            </div>
+            <p className="text-xs text-muted-foreground">Auto-import G-code files from a Dropbox folder. Slice on your PC, save to Dropbox, files appear here.</p>
+            {!dropboxStatus?.connected ? (
+              <div className="p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                <p className="text-xs text-yellow-400">Dropbox not connected. Set up the Dropbox integration in your Replit project settings.</p>
+              </div>
+            ) : dropboxStatus?.folderPath ? (
+              <>
+                <div className="flex items-center gap-2 p-2 bg-green-500/10 border border-green-500/30 rounded-lg">
+                  <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-green-400">Syncing</p>
+                    <p className="text-[10px] text-muted-foreground font-mono truncate">{dropboxStatus.folderPath}</p>
+                    {dropboxStatus.account && <p className="text-[10px] text-muted-foreground">{dropboxStatus.account.email}</p>}
+                  </div>
+                  <Button variant="outline" size="sm" onClick={handleDropboxDisconnect} className="text-destructive border-destructive/50 hover:bg-destructive/10 text-xs shrink-0" data-testid="button-dropbox-disconnect">Disable</Button>
+                </div>
+                <Button variant="outline" size="sm" className="w-full" onClick={handleDropboxSync} disabled={dropboxSyncing} data-testid="button-dropbox-sync">
+                  {dropboxSyncing ? (<><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Syncing...</>) : (<><RefreshCw className="h-3.5 w-3.5 mr-1.5" />Sync Now</>)}
+                </Button>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <Input placeholder="/GCode" value={dropboxFolderPath} onChange={(e) => setDropboxFolderPath(e.target.value)} data-testid="input-dropbox-folder" />
+                <p className="text-[10px] text-muted-foreground">Path to a folder in your Dropbox (e.g., /GCode or /3DPrinting)</p>
+                <Button size="sm" onClick={handleDropboxSetFolder} className="w-full" data-testid="button-dropbox-set-folder">
+                  <Cloud className="h-3.5 w-3.5 mr-1.5" /> Enable Sync
                 </Button>
               </div>
             )}

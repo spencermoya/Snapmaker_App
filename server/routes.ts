@@ -12,6 +12,7 @@ import { startStream, stopStream, getStreamInfo, getHlsDirectory, playlistExists
 import { fetchWithAuth } from "./digestAuth";
 import { insertPrinterSchema, dashboardPreferencesSchema, type PrinterStatus } from "@shared/schema";
 import { merossLogin, merossToggle, merossGetStatus, merossLogout, isMerossConnected, autoConnectMeross } from "./merossService";
+import { isDropboxConnected, getDropboxAccountInfo, syncDropboxFolder, startDropboxSync, stopDropboxSync, isDropboxSyncRunning } from "./dropboxService";
 import { z } from "zod";
 
 const upload = multer({ 
@@ -2112,6 +2113,64 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/dropbox/status", async (_req, res) => {
+    try {
+      const connected = await isDropboxConnected();
+      const folderPath = await storage.getSetting("dropbox_folder_path");
+      const syncEnabled = await storage.getSetting("dropbox_sync_enabled");
+      const account = connected ? await getDropboxAccountInfo() : null;
+      res.json({
+        connected,
+        folderPath,
+        syncEnabled: syncEnabled === "true",
+        syncing: isDropboxSyncRunning(),
+        account,
+      });
+    } catch (error) {
+      res.json({ connected: false, folderPath: null, syncEnabled: false, syncing: false, account: null });
+    }
+  });
+
+  app.put("/api/dropbox/folder", async (req, res) => {
+    try {
+      const { folderPath } = req.body;
+      if (!folderPath || typeof folderPath !== "string") {
+        return res.status(400).json({ error: "Folder path is required" });
+      }
+      const normalized = folderPath.startsWith("/") ? folderPath : `/${folderPath}`;
+      await storage.setSetting("dropbox_folder_path", normalized);
+      await storage.setSetting("dropbox_sync_enabled", "true");
+      startDropboxSync().catch(err => console.error("[Dropbox] Failed to start sync:", err));
+      res.json({ success: true, folderPath: normalized });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save Dropbox folder path" });
+    }
+  });
+
+  app.post("/api/dropbox/sync", async (req, res) => {
+    try {
+      const printers = await storage.getAllPrinters();
+      if (printers.length === 0) {
+        return res.status(400).json({ error: "No printers configured" });
+      }
+      const result = await syncDropboxFolder(printers[0].id);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : "Sync failed" });
+    }
+  });
+
+  app.delete("/api/dropbox/disconnect", async (_req, res) => {
+    try {
+      await stopDropboxSync();
+      await storage.setSetting("dropbox_folder_path", null);
+      await storage.setSetting("dropbox_sync_enabled", null);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to disconnect Dropbox" });
+    }
+  });
+
   // Initialize file watcher and Luban proxy on startup
   initializeWatcher().catch((err) => {
     console.error("Failed to initialize file watcher:", err);
@@ -2123,6 +2182,10 @@ export async function registerRoutes(
 
   autoConnectMeross().catch((err) => {
     console.error("Failed to auto-connect Meross:", err);
+  });
+
+  startDropboxSync().catch((err) => {
+    console.error("Failed to start Dropbox sync:", err);
   });
 
   return httpServer;

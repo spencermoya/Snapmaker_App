@@ -18,7 +18,7 @@ Preferred communication style: Simple, everyday language.
 ### Key Features
 - **Real-time Monitoring**: Displays printer status, temperature, and print progress.
 - **Printer Control**: Jog controls, connection management, and command execution.
-- **File Management**: Supports multiple file upload methods (manual, drag & drop, slicer integration, watch folder, Luban proxy capture).
+- **File Management**: Supports multiple file upload methods (manual, drag & drop, slicer integration, watch folder, Luban proxy capture, Dropbox sync).
 - **Webcam Integration**: Live viewing from IP cameras with support for snapshot, MJPEG, and RTSP/HLS streams.
 - **Smart Plug Control**: Integration with Meross cloud API for controlling smart plugs, allowing power management for printers.
 - **Scheduled Prints**: Enables scheduling G-code files for future printing, with optional smart plug power-on and push notifications.
@@ -38,6 +38,7 @@ Preferred communication style: Simple, everyday language.
 - **Meross Cloud API**: Integration for controlling Meross smart plugs via cloud REST API and MQTT.
 - **IP Cameras**: Support for various IP cameras (Lorex, Dahua, Hikvision, Axis, etc.) via snapshot polling, MJPEG streams, or RTSP/HLS conversion (using ffmpeg if RTSP/HLS is enabled).
 - **Web Push API**: For sending push notifications to subscribed devices.
+- **Dropbox API**: Replit Dropbox connector for OAuth; auto-syncs G-code files from a configured Dropbox folder. Service in `server/dropboxService.ts`.
 - **Vite & esbuild**: Build tools for frontend and backend.
 
 ## Frontend Navigation Structure
@@ -50,6 +51,6 @@ The app uses a bottom navigation bar (`BottomNav.tsx`) with 5 views:
 - **Settings** (`/settings` → `Settings.tsx`): Tabbed layout with 3 tabs:
   - **Printer**: Add/manage printers
   - **Camera**: IP camera setup
-  - **More**: Push notifications, Meross smart plug, watch folder, slicer integration, Luban proxy
+  - **More**: Push notifications, Meross smart plug, Dropbox sync, watch folder, slicer integration, Luban proxy
 
 Old Dashboard.tsx with module registry/customize system has been removed. All modules are now split into dedicated pages.
