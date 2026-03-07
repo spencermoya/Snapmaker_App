@@ -2,7 +2,7 @@
 
 ## Overview
 
-Snapmaker Control is a web-based dashboard application designed for comprehensive monitoring and control of Snapmaker 2.0 F350 3D printers. It provides real-time printer status, temperature tracking, jog controls, file management, and live webcam viewing. The application aims to offer an enhanced and streamlined user experience for managing 3D printing operations.
+Snapmaker Control is a web-based PWA dashboard for comprehensive monitoring and control of Snapmaker 2.0 F350 3D printers. Uses a mobile-app-style bottom navigation bar with 5 views: Status, Camera, Files, Schedule, and Settings. Designed for zero-scroll on mobile devices.
 
 ## User Preferences
 
@@ -39,3 +39,17 @@ Preferred communication style: Simple, everyday language.
 - **IP Cameras**: Support for various IP cameras (Lorex, Dahua, Hikvision, Axis, etc.) via snapshot polling, MJPEG streams, or RTSP/HLS conversion (using ffmpeg if RTSP/HLS is enabled).
 - **Web Push API**: For sending push notifications to subscribed devices.
 - **Vite & esbuild**: Build tools for frontend and backend.
+
+## Frontend Navigation Structure
+
+The app uses a bottom navigation bar (`BottomNav.tsx`) with 5 views:
+- **Status** (`/` → `StatusPage.tsx`): Compact single-screen showing printer name, connection status, print progress, nozzle/bed temperatures, smart plug toggle, and action buttons (pause/cancel/e-stop)
+- **Camera** (`/camera` → `CameraPage.tsx`): Full-screen camera feed using `WebcamFeed` component; shows setup prompt if no camera configured
+- **Files** (`/files` → `FilesPage.tsx`): Full-page file list with internal scrolling using `FileList` component
+- **Schedule** (`/schedule` → `SchedulePage.tsx`): Full-page scheduled prints using `ScheduledPrints` component
+- **Settings** (`/settings` → `Settings.tsx`): Tabbed layout with 3 tabs:
+  - **Printer**: Add/manage printers
+  - **Camera**: IP camera setup
+  - **More**: Push notifications, Meross smart plug, watch folder, slicer integration, Luban proxy
+
+Old Dashboard.tsx with module registry/customize system has been removed. All modules are now split into dedicated pages.

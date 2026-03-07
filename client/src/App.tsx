@@ -5,17 +5,29 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
-import NotFound from "@/pages/not-found";
-import Dashboard from "@/pages/Dashboard";
+import BottomNav from "@/components/BottomNav";
+import StatusPage from "@/pages/StatusPage";
+import CameraPage from "@/pages/CameraPage";
+import FilesPage from "@/pages/FilesPage";
+import SchedulePage from "@/pages/SchedulePage";
 import Settings from "@/pages/Settings";
+import NotFound from "@/pages/not-found";
 
 function Router() {
   return (
-    <Switch>
-      <Route path="/" component={Dashboard}/>
-      <Route path="/settings" component={Settings}/>
-      <Route component={NotFound} />
-    </Switch>
+    <div className="flex flex-col h-screen bg-background">
+      <main className="flex-1 overflow-hidden pb-16">
+        <Switch>
+          <Route path="/" component={StatusPage} />
+          <Route path="/camera" component={CameraPage} />
+          <Route path="/files" component={FilesPage} />
+          <Route path="/schedule" component={SchedulePage} />
+          <Route path="/settings" component={Settings} />
+          <Route component={NotFound} />
+        </Switch>
+      </main>
+      <BottomNav />
+    </div>
   );
 }
 
