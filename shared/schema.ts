@@ -48,6 +48,7 @@ export const uploadedFiles = pgTable("uploaded_files", {
   thumbnail: text("thumbnail"),
   uploadedAt: timestamp("uploaded_at").defaultNow(),
   source: text("source").notNull(),
+  transferredToPrinter: boolean("transferred_to_printer").default(false),
 });
 
 export const appSettings = pgTable("app_settings", {

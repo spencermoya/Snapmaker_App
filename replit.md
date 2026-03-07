@@ -18,7 +18,7 @@ Preferred communication style: Simple, everyday language.
 ### Key Features
 - **Real-time Monitoring**: Displays printer status, temperature, and print progress.
 - **Printer Control**: Jog controls, connection management, and command execution.
-- **File Management**: Supports multiple file upload methods (manual, drag & drop, slicer integration, watch folder, Luban proxy capture, Dropbox sync).
+- **File Management**: Supports multiple file upload methods (manual, drag & drop, slicer integration, watch folder, Luban proxy capture, Dropbox sync). Auto-transfer option sends new files to the printer automatically (upload only, no print start).
 - **Webcam Integration**: Live viewing from IP cameras with support for snapshot, MJPEG, and RTSP/HLS streams.
 - **Smart Plug Control**: Integration with Meross cloud API for controlling smart plugs, allowing power management for printers.
 - **Scheduled Prints**: Enables scheduling G-code files for future printing, with optional smart plug power-on and push notifications.

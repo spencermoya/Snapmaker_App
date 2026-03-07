@@ -15,6 +15,8 @@ export interface IStorage {
   getUploadedFile(id: number, printerId: number): Promise<UploadedFile | undefined>;
   addUploadedFile(file: InsertUploadedFile): Promise<UploadedFile>;
   deleteUploadedFile(id: number, printerId: number): Promise<boolean>;
+  getUntransferredFiles(printerId: number): Promise<UploadedFile[]>;
+  markFileTransferred(id: number): Promise<void>;
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string | null): Promise<void>;
   getAllSmartPlugs(): Promise<SmartPlug[]>;
@@ -129,6 +131,23 @@ export class DbStorage implements IStorage {
       .where(and(eq(uploadedFiles.id, id), eq(uploadedFiles.printerId, printerId)))
       .returning();
     return result.length > 0;
+  }
+
+  async getUntransferredFiles(printerId: number): Promise<UploadedFile[]> {
+    return await db
+      .select()
+      .from(uploadedFiles)
+      .where(and(
+        eq(uploadedFiles.printerId, printerId),
+        eq(uploadedFiles.transferredToPrinter, false)
+      ));
+  }
+
+  async markFileTransferred(id: number): Promise<void> {
+    await db
+      .update(uploadedFiles)
+      .set({ transferredToPrinter: true })
+      .where(eq(uploadedFiles.id, id));
   }
 
   async getSetting(key: string): Promise<string | null> {

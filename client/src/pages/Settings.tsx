@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Plus, Trash2, Wifi, WifiOff, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Bell, Camera, Loader2, ChevronDown, ChevronUp, Plug, Power, Cloud, RefreshCw } from "lucide-react";
+import { Plus, Trash2, Wifi, WifiOff, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Bell, Camera, Loader2, ChevronDown, ChevronUp, Plug, Power, Cloud, RefreshCw, Upload } from "lucide-react";
 import type { Printer, SmartPlug } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -15,6 +15,7 @@ interface SettingsData {
   watchFolder: { path: string | null; active: boolean };
   slicerApi: { octoprintUrl: string; directUrl: string; configUrl: string };
   lubanProxy: { enabled: boolean; port: number; targetPrinterIp: string | null; hasToken: boolean };
+  autoTransfer: boolean;
 }
 
 interface PushStatus { enabled: boolean; publicKey: string | null }
@@ -275,6 +276,14 @@ export default function Settings() {
     } catch { toast.error("Failed to disconnect"); }
   };
 
+  const handleAutoTransferToggle = async (enabled: boolean) => {
+    try {
+      await apiRequest("PUT", "/api/settings/auto-transfer", { enabled });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast.success(enabled ? "Auto-transfer enabled" : "Auto-transfer disabled");
+    } catch { toast.error("Failed to update setting"); }
+  };
+
   const addPrinterMutation = useMutation({
     mutationFn: async (data: { name: string; ipAddress: string }) => {
       const res = await fetch("/api/printers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
@@ -497,6 +506,21 @@ export default function Settings() {
                 )}
               </>
             )}
+          </Card>
+
+          <Card className="p-4 bg-secondary/20 border-border space-y-3">
+            <div className="flex items-center gap-2">
+              <Upload className="h-4 w-4 text-primary" />
+              <h2 className="text-sm font-semibold">Auto-Transfer to Printer</h2>
+            </div>
+            <p className="text-xs text-muted-foreground">Automatically send new files to the printer when it's connected. Files are uploaded but not started.</p>
+            <div className="flex items-center justify-between p-2 bg-secondary/30 rounded-lg">
+              <div>
+                <p className="text-sm font-medium">Auto-Transfer</p>
+                <p className="text-[10px] text-muted-foreground">{settings?.autoTransfer ? "New files will be sent to printer" : "Files stay in app until you send them"}</p>
+              </div>
+              <Switch checked={settings?.autoTransfer ?? false} onCheckedChange={handleAutoTransferToggle} data-testid="switch-auto-transfer" />
+            </div>
           </Card>
 
           <Card className="p-4 bg-secondary/20 border-border space-y-3">

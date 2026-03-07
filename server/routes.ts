@@ -1148,6 +1148,7 @@ export async function registerRoutes(
       const watchFolderPath = await storage.getSetting("watchFolderPath");
       const watcherStatus = getWatcherStatus();
       const lubanProxyStatus = getLubanProxyStatus();
+      const autoTransfer = await storage.getSetting("auto_transfer_files");
 
       res.json({
         watchFolder: {
@@ -1160,6 +1161,7 @@ export async function registerRoutes(
           configUrl: `${baseUrl}/api/slicer-config`,
         },
         lubanProxy: lubanProxyStatus,
+        autoTransfer: autoTransfer === "true",
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to get settings" });
@@ -2110,6 +2112,16 @@ export async function registerRoutes(
       res.json({ success: deleted });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete scheduled print" });
+    }
+  });
+
+  app.put("/api/settings/auto-transfer", async (req, res) => {
+    try {
+      const { enabled } = req.body;
+      await storage.setSetting("auto_transfer_files", enabled ? "true" : null);
+      res.json({ success: true, enabled: !!enabled });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update auto-transfer setting" });
     }
   });
 

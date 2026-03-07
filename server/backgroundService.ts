@@ -601,6 +601,77 @@ async function checkScheduledPrints(): Promise<void> {
   }
 }
 
+let isTransferring = false;
+
+async function autoTransferFiles(): Promise<void> {
+  if (isTransferring) return;
+  isTransferring = true;
+  try {
+    const enabled = await storage.getSetting('auto_transfer_files');
+    if (enabled !== 'true') return;
+
+    const allPrinters = await storage.getAllPrinters();
+    for (const printer of allPrinters) {
+      if (!printer.isConnected || !printer.token) continue;
+
+      const untransferred = await storage.getUntransferredFiles(printer.id);
+      if (untransferred.length === 0) continue;
+
+      for (const file of untransferred) {
+        if (!file.fileContent) {
+          continue;
+        }
+
+        try {
+          console.log(`[BackgroundService] Auto-transferring "${file.filename}" to ${printer.name}...`);
+
+          const boundary = "----WebKitFormBoundary" + Math.random().toString(36).substring(2);
+          const parts: string[] = [];
+          parts.push(`--${boundary}\r\n`);
+          parts.push(`Content-Disposition: form-data; name="token"\r\n\r\n`);
+          parts.push(`${printer.token}\r\n`);
+          parts.push(`--${boundary}\r\n`);
+          parts.push(`Content-Disposition: form-data; name="file"; filename="${file.filename}"\r\n`);
+          parts.push(`Content-Type: application/octet-stream\r\n\r\n`);
+          parts.push(file.fileContent);
+          parts.push(`\r\n--${boundary}--\r\n`);
+          const body = parts.join("");
+
+          const uploadUrl = `http://${printer.ipAddress}:${SNAPMAKER_PORT}/api/v1/upload`;
+          const uploadResp = await fetch(uploadUrl, {
+            method: "POST",
+            headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
+            body,
+            signal: AbortSignal.timeout(120000),
+          });
+
+          if (uploadResp.ok) {
+            await storage.markFileTransferred(file.id);
+            console.log(`[BackgroundService] Auto-transferred "${file.filename}" to ${printer.name}`);
+
+            if (isPushEnabled()) {
+              const { sendPushNotification } = await import("./pushService");
+              sendPushNotification({
+                title: "File Transferred",
+                body: `"${file.filename}" sent to ${printer.name}`,
+                data: { type: "file_transferred", filename: file.filename },
+              }).catch(err => console.log("[BackgroundService] Push notification error:", err));
+            }
+          } else {
+            console.log(`[BackgroundService] Failed to transfer "${file.filename}": ${uploadResp.status}`);
+          }
+        } catch (err) {
+          console.log(`[BackgroundService] Error transferring "${file.filename}":`, err instanceof Error ? err.message : err);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("[BackgroundService] Auto-transfer error:", error);
+  } finally {
+    isTransferring = false;
+  }
+}
+
 async function pollAllPrinters(): Promise<void> {
   try {
     const printers = await storage.getAllPrinters();
@@ -609,6 +680,7 @@ async function pollAllPrinters(): Promise<void> {
     await Promise.all(printers.map(printer => pollPrinter(printer)));
     
     await checkScheduledPrints();
+    await autoTransferFiles();
   } catch (error) {
     console.error("[BackgroundService] Poll error:", error);
   }
