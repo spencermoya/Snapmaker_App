@@ -4,7 +4,6 @@ import multer from "multer";
 import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
-import { startWatcher, stopWatcher, getWatcherStatus, initializeWatcher } from "./fileWatcher";
 import { startLubanProxy, stopLubanProxy, getLubanProxyStatus, initializeLubanProxy } from "./lubanProxy";
 import { extractThumbnail } from "./thumbnailExtractor";
 import { getVapidPublicKey, isPushEnabled } from "./pushService";
@@ -1099,45 +1098,6 @@ export async function registerRoutes(
     });
   });
 
-  // Watch folder settings
-  app.get("/api/settings/watch-folder", async (req, res) => {
-    try {
-      const savedPath = await storage.getSetting("watchFolderPath");
-      const status = getWatcherStatus();
-      res.json({
-        path: savedPath,
-        active: status.active,
-        currentPath: status.path,
-      });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get watch folder settings" });
-    }
-  });
-
-  app.put("/api/settings/watch-folder", async (req, res) => {
-    try {
-      const { path: folderPath } = req.body;
-
-      if (!folderPath) {
-        await storage.setSetting("watchFolderPath", null);
-        await stopWatcher();
-        return res.json({ success: true, message: "Watch folder disabled" });
-      }
-
-      const success = await startWatcher(folderPath);
-      if (!success) {
-        return res.status(400).json({ error: "Invalid folder path or unable to watch" });
-      }
-
-      await storage.setSetting("watchFolderPath", folderPath);
-      res.json({ success: true, message: "Watch folder configured", path: folderPath });
-    } catch (error) {
-      res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to configure watch folder",
-      });
-    }
-  });
-
   // Get all settings for the settings page
   app.get("/api/settings", async (req, res) => {
     try {
@@ -1145,16 +1105,10 @@ export async function registerRoutes(
       const host = req.get("host");
       const baseUrl = `${protocol}://${host}`;
       
-      const watchFolderPath = await storage.getSetting("watchFolderPath");
-      const watcherStatus = getWatcherStatus();
       const lubanProxyStatus = getLubanProxyStatus();
       const autoTransfer = await storage.getSetting("auto_transfer_files");
 
       res.json({
-        watchFolder: {
-          path: watchFolderPath,
-          active: watcherStatus.active,
-        },
         slicerApi: {
           octoprintUrl: `${baseUrl}/api/files/local`,
           directUrl: `${baseUrl}/api/upload`,
@@ -2183,11 +2137,7 @@ export async function registerRoutes(
     }
   });
 
-  // Initialize file watcher and Luban proxy on startup
-  initializeWatcher().catch((err) => {
-    console.error("Failed to initialize file watcher:", err);
-  });
-
+  // Initialize Luban proxy on startup
   initializeLubanProxy().catch((err) => {
     console.error("Failed to initialize Luban proxy:", err);
   });

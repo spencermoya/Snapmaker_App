@@ -7,12 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Plus, Trash2, Wifi, WifiOff, FolderOpen, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Bell, Camera, Loader2, ChevronDown, ChevronUp, Plug, Power, Cloud, RefreshCw, Upload } from "lucide-react";
+import { Plus, Trash2, Wifi, WifiOff, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Bell, Camera, Loader2, ChevronDown, ChevronUp, Plug, Power, Cloud, RefreshCw, Upload } from "lucide-react";
 import type { Printer, SmartPlug } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 
 interface SettingsData {
-  watchFolder: { path: string | null; active: boolean };
   slicerApi: { octoprintUrl: string; directUrl: string; configUrl: string };
   lubanProxy: { enabled: boolean; port: number; targetPrinterIp: string | null; hasToken: boolean };
   autoTransfer: boolean;
@@ -29,7 +28,6 @@ export default function Settings() {
   const queryClient = useQueryClient();
   const [newPrinterName, setNewPrinterName] = useState("");
   const [newPrinterIp, setNewPrinterIp] = useState("");
-  const [watchFolderPath, setWatchFolderPath] = useState("");
   const [lubanProxyIp, setLubanProxyIp] = useState("");
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [merossEmail, setMerossEmail] = useState("");
@@ -311,15 +309,6 @@ export default function Settings() {
     onError: () => toast.error("Failed to disconnect"),
   });
 
-  const watchFolderMutation = useMutation({
-    mutationFn: async (path: string | null) => {
-      const res = await fetch("/api/settings/watch-folder", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) });
-      if (!res.ok) { const data = await res.json(); throw new Error(data.error || "Failed to update watch folder"); } return res.json();
-    },
-    onSuccess: (data) => { queryClient.invalidateQueries({ queryKey: ["/api/settings"] }); toast.success(data.message); setWatchFolderPath(""); },
-    onError: (error: Error) => toast.error(error.message),
-  });
-
   const lubanProxyMutation = useMutation({
     mutationFn: async (data: { printerIp?: string; enabled: boolean }) => {
       const res = await fetch("/api/settings/luban-proxy", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
@@ -592,28 +581,6 @@ export default function Settings() {
                 <p className="text-[10px] text-muted-foreground">Path to a folder in your Dropbox (e.g., /GCode or /3DPrinting)</p>
                 <Button size="sm" onClick={handleDropboxSetFolder} className="w-full" data-testid="button-dropbox-set-folder">
                   <Cloud className="h-3.5 w-3.5 mr-1.5" /> Enable Sync
-                </Button>
-              </div>
-            )}
-          </Card>
-
-          <Card className="p-4 bg-secondary/20 border-border space-y-3">
-            <div className="flex items-center gap-2">
-              <FolderOpen className="h-4 w-4 text-primary" />
-              <h2 className="text-sm font-semibold">Watch Folder</h2>
-            </div>
-            <p className="text-xs text-muted-foreground">Auto-import G-code files from a folder on your Pi.</p>
-            {settings?.watchFolder.path ? (
-              <div className="flex items-center gap-2 p-2 bg-green-500/10 border border-green-500/30 rounded-lg">
-                {settings.watchFolder.active ? <CheckCircle className="h-4 w-4 text-green-500 shrink-0" /> : <XCircle className="h-4 w-4 text-yellow-500 shrink-0" />}
-                <p className="text-xs font-mono flex-1 truncate">{settings.watchFolder.path}</p>
-                <Button variant="outline" size="sm" onClick={() => watchFolderMutation.mutate(null)} disabled={watchFolderMutation.isPending} data-testid="button-disable-watch">Disable</Button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <Input placeholder="/home/pi/gcode" value={watchFolderPath} onChange={(e) => setWatchFolderPath(e.target.value)} data-testid="input-watch-folder" />
-                <Button size="sm" onClick={() => { if (watchFolderPath.trim()) watchFolderMutation.mutate(watchFolderPath.trim()); else toast.error("Enter a folder path"); }} disabled={watchFolderMutation.isPending} data-testid="button-set-watch-folder">
-                  <FolderOpen className="h-3.5 w-3.5 mr-1.5" /> Enable
                 </Button>
               </div>
             )}

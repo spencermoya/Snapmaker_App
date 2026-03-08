@@ -270,7 +270,7 @@ export default function FileList({ printerId }: FileListProps) {
       case "upload": return "Manual Upload";
       case "drag-drop": return "Drag & Drop";
       case "slicer": return "Slicer";
-      case "watch-folder": return "Watch Folder";
+
       case "luban": return "Luban";
       default: return source;
     }

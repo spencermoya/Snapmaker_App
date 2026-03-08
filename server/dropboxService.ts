@@ -16,24 +16,44 @@ async function getAccessToken() {
     ? 'depl ' + process.env.WEB_REPL_RENEWAL
     : null;
 
-  if (!xReplitToken) {
-    throw new Error('X-Replit-Token not found for repl/depl');
+  if (!hostname) {
+    console.log('[Dropbox] REPLIT_CONNECTORS_HOSTNAME not set');
+    throw new Error('Dropbox connector not available in this environment');
   }
 
-  connectionSettings = await fetch(
-    'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=dropbox',
-    {
+  if (!xReplitToken) {
+    console.log('[Dropbox] Neither REPL_IDENTITY nor WEB_REPL_RENEWAL found');
+    throw new Error('Dropbox authentication token not available');
+  }
+
+  try {
+    const url = 'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=dropbox';
+    const res = await fetch(url, {
       headers: {
         'Accept': 'application/json',
         'X-Replit-Token': xReplitToken
       }
-    }
-  ).then(res => res.json()).then(data => data.items?.[0]);
+    });
 
-  const accessToken = connectionSettings?.settings?.access_token || connectionSettings.settings?.oauth?.credentials?.access_token;
+    if (!res.ok) {
+      console.log(`[Dropbox] Connector API returned ${res.status}: ${res.statusText}`);
+      throw new Error(`Dropbox connector API error: ${res.status}`);
+    }
+
+    const data = await res.json();
+    connectionSettings = data.items?.[0];
+  } catch (err) {
+    if (err instanceof TypeError && (err as any).cause) {
+      console.log('[Dropbox] Network error reaching connector:', (err as any).cause?.message || err.message);
+    }
+    throw err;
+  }
+
+  const accessToken = connectionSettings?.settings?.access_token || connectionSettings?.settings?.oauth?.credentials?.access_token;
 
   if (!connectionSettings || !accessToken) {
-    throw new Error('Dropbox not connected');
+    console.log('[Dropbox] No access token found in connector response');
+    throw new Error('Dropbox not connected - no access token available');
   }
   return accessToken;
 }
@@ -55,7 +75,8 @@ export async function isDropboxConnected(): Promise<boolean> {
     const dbx = await getUncachableDropboxClient();
     await dbx.usersGetCurrentAccount();
     return true;
-  } catch {
+  } catch (err) {
+    console.log('[Dropbox] Connection check failed:', err instanceof Error ? err.message : err);
     return false;
   }
 }
