@@ -18,12 +18,12 @@ Preferred communication style: Simple, everyday language.
 ### Key Features
 - **Real-time Monitoring**: Displays printer status, temperature, and print progress.
 - **Printer Control**: Jog controls, connection management, and command execution.
-- **File Management**: Supports multiple file upload methods (manual, drag & drop, slicer integration, Luban proxy capture, Dropbox sync). Auto-transfer option sends new files to the printer automatically (upload only, no print start).
+- **File Management**: Supports multiple file upload methods (manual, drag & drop, slicer integration, Dropbox sync). Auto-transfer option sends new files to the printer automatically (upload only, no print start).
 - **Webcam Integration**: Live viewing from IP cameras with support for snapshot, MJPEG, and RTSP/HLS streams.
 - **Smart Plug Control**: Integration with Meross cloud API for controlling smart plugs, allowing power management for printers.
 - **Scheduled Prints**: Enables scheduling G-code files for future printing, with optional smart plug power-on and push notifications.
 - **Push Notifications**: Web Push API integration for alerts on print status changes, printer connectivity, and scheduled print events.
-- **Authentication**: Token-based authentication for printer connections, with Luban token capture for seamless reconnections.
+- **Authentication**: Token-based authentication for printer connections.
 
 ### Design Patterns
 - **Shared Type Definitions**: `shared/` directory for common types between frontend and backend.
@@ -51,6 +51,6 @@ The app uses a bottom navigation bar (`BottomNav.tsx`) with 5 views:
 - **Settings** (`/settings` → `Settings.tsx`): Tabbed layout with 3 tabs:
   - **Printer**: Add/manage printers
   - **Camera**: IP camera setup
-  - **More**: Push notifications, Auto-transfer, Meross smart plug, Dropbox sync, slicer integration, Luban proxy
+  - **More**: Push notifications, Auto-transfer, Meross smart plug, Dropbox sync, slicer integration
 
 Old Dashboard.tsx with module registry/customize system has been removed. All modules are now split into dedicated pages.

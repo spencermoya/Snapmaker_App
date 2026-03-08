@@ -7,13 +7,12 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Plus, Trash2, Wifi, WifiOff, Copy, CheckCircle, XCircle, ExternalLink, Monitor, Radio, Bell, Camera, Loader2, ChevronDown, ChevronUp, Plug, Power, Cloud, RefreshCw, Upload } from "lucide-react";
+import { Plus, Trash2, Wifi, WifiOff, Copy, CheckCircle, XCircle, ExternalLink, Bell, Camera, Loader2, ChevronDown, ChevronUp, Plug, Power, Cloud, RefreshCw, Upload } from "lucide-react";
 import type { Printer, SmartPlug } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 
 interface SettingsData {
   slicerApi: { octoprintUrl: string; directUrl: string; configUrl: string };
-  lubanProxy: { enabled: boolean; port: number; targetPrinterIp: string | null; hasToken: boolean };
   autoTransfer: boolean;
 }
 
@@ -28,7 +27,6 @@ export default function Settings() {
   const queryClient = useQueryClient();
   const [newPrinterName, setNewPrinterName] = useState("");
   const [newPrinterIp, setNewPrinterIp] = useState("");
-  const [lubanProxyIp, setLubanProxyIp] = useState("");
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [merossEmail, setMerossEmail] = useState("");
   const [merossPassword, setMerossPassword] = useState("");
@@ -307,15 +305,6 @@ export default function Settings() {
     mutationFn: async (id: number) => { const res = await fetch(`/api/printers/${id}/disconnect`, { method: "POST" }); if (!res.ok) throw new Error("Failed to disconnect"); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/printers"] }); toast.success("Disconnected"); },
     onError: () => toast.error("Failed to disconnect"),
-  });
-
-  const lubanProxyMutation = useMutation({
-    mutationFn: async (data: { printerIp?: string; enabled: boolean }) => {
-      const res = await fetch("/api/settings/luban-proxy", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
-      if (!res.ok) { const errData = await res.json(); throw new Error(errData.error || "Failed to update Luban proxy"); } return res.json();
-    },
-    onSuccess: (data) => { queryClient.invalidateQueries({ queryKey: ["/api/settings"] }); toast.success(data.message); setLubanProxyIp(""); },
-    onError: (error: Error) => toast.error(error.message),
   });
 
   const handleAddPrinter = () => {
@@ -615,43 +604,6 @@ export default function Settings() {
             )}
           </Card>
 
-          <Card className="p-4 bg-secondary/20 border-border space-y-3">
-            <div className="flex items-center gap-2">
-              <Radio className="h-4 w-4 text-primary" />
-              <h2 className="text-sm font-semibold">Luban Auto-Capture</h2>
-            </div>
-            <p className="text-xs text-muted-foreground">Capture files from Luban app and token for prompt-free connections.</p>
-            {settings?.lubanProxy.enabled ? (
-              <>
-                <div className="flex items-center gap-2 p-2 bg-green-500/10 border border-green-500/30 rounded-lg">
-                  <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
-                  <div className="flex-1">
-                    <p className="text-xs font-medium">Active</p>
-                    <p className="text-[10px] text-muted-foreground">Port {settings.lubanProxy.port} → {settings.lubanProxy.targetPrinterIp}</p>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => lubanProxyMutation.mutate({ enabled: false })} disabled={lubanProxyMutation.isPending} data-testid="button-disable-luban-proxy">Disable</Button>
-                </div>
-                {settings.lubanProxy.hasToken ? (
-                  <div className="flex items-center gap-2 p-2 bg-green-500/10 border border-green-500/30 rounded-lg">
-                    <CheckCircle className="h-3.5 w-3.5 text-green-500" />
-                    <p className="text-xs text-green-400">Luban token captured</p>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                    <Radio className="h-3.5 w-3.5 text-yellow-500" />
-                    <p className="text-xs text-yellow-400">Waiting for Luban connection...</p>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="space-y-2">
-                <Input placeholder={printers.length > 0 ? printers[0].ipAddress : "Printer IP"} value={lubanProxyIp} onChange={(e) => setLubanProxyIp(e.target.value)} data-testid="input-luban-proxy-ip" />
-                <Button size="sm" onClick={() => { const ip = lubanProxyIp.trim() || (printers.length > 0 ? printers[0].ipAddress : ""); if (!ip) { toast.error("Enter printer IP"); return; } lubanProxyMutation.mutate({ printerIp: ip, enabled: true }); }} disabled={lubanProxyMutation.isPending} data-testid="button-enable-luban-proxy">
-                  <Monitor className="h-3.5 w-3.5 mr-1.5" /> Enable
-                </Button>
-              </div>
-            )}
-          </Card>
         </TabsContent>
       </Tabs>
     </div>

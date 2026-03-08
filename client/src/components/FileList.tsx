@@ -271,7 +271,7 @@ export default function FileList({ printerId }: FileListProps) {
       case "drag-drop": return "Drag & Drop";
       case "slicer": return "Slicer";
 
-      case "luban": return "Luban";
+
       default: return source;
     }
   };
